@@ -1,0 +1,7 @@
+Pillow>= 8.1.2
+Numpy>= 1.14.5
+Protobuf>= 3.6.0
+PyGame>= 1.9.4
+MatPlotLib== 3.0.0
+Future>= 0.16.0
+SciPy>= 0.17.0
