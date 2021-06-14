@@ -20,6 +20,8 @@ import behavioural_planner
 import cv2
 import json 
 from math import sin, cos, pi, tan, sqrt
+from traffic_light_detection_module.yolo import YOLO
+from traffic_light_detection_module.postprocessing import draw_boxes
 
 # Script level imports
 sys.path.append(os.path.abspath(sys.path[0] + '/..'))
@@ -32,6 +34,7 @@ from carla.controller import utils
 from carla.sensor import Camera
 from carla.image_converter import labels_to_array, depth_to_array, to_bgra_array
 from carla.planner.city_track import CityTrack
+import carla.image_converter as image_converter
 
 
 ###############################################################################
@@ -116,9 +119,12 @@ camera_parameters = {}
 camera_parameters['x'] = 1.8
 camera_parameters['y'] = 0
 camera_parameters['z'] = 1.3
-camera_parameters['width'] = 200
-camera_parameters['height'] = 200
+camera_parameters['width'] = 400
+camera_parameters['height'] = 400
 camera_parameters['fov'] = 90
+camera_parameters['roll'] = 0
+camera_parameters['pitch'] = 0
+camera_parameters['yaw'] = 10
 
 def rotate_x(angle):
     R = np.mat([[ 1,         0,           0],
@@ -203,8 +209,26 @@ def make_carla_settings(args):
     camera_width = camera_parameters['width']
     camera_height = camera_parameters['height']
     camera_fov = camera_parameters['fov']
+    camera_roll = camera_parameters['roll']
+    camera_pitch = camera_parameters['pitch']
+    camera_yaw = camera_parameters['yaw']
 
     # Declare here your sensors
+    
+    # RGB Camera 1
+    camera0 = Camera("CameraRGB_Uno")
+    camera0.set_image_size(camera_width, camera_height)
+    camera0.set(FOV=camera_fov + 30) # 120°
+    camera0.set_position(cam_x_pos, cam_y_pos, cam_height)
+    # RGB Camera 2
+    camera1 = Camera("CameraRGB_Due")
+    camera1.set_image_size(camera_width, camera_height)
+    camera1.set(FOV=camera_fov - 20) # 70°
+    camera1.set_position(cam_x_pos, cam_y_pos, cam_height)
+    camera1.set_rotation(camera_pitch, camera_yaw, camera_roll)
+
+    settings.add_sensor(camera0)
+    settings.add_sensor(camera1)
 
     return settings
 
@@ -367,6 +391,30 @@ def write_collisioncount_file(collided_list):
     with open(file_name, 'w') as collision_file: 
         collision_file.write(str(sum(collided_list)))
 
+###########################################################################
+# GRUPPO 18 ###############################################################
+def visualize_sensor_data(sensor_data, showing_dims=(200,200)):
+    if sensor_data.get("CameraRGB_Uno", None) is not None and sensor_data.get("CameraRGB_Due", None) is not None:
+        # Camera RGB data
+        image_BGR = image_converter.to_bgra_array(sensor_data["CameraRGB_Uno"])
+        image_BGR = cv2.resize(image_BGR,showing_dims)
+        cv2.imshow("BGRA_IMAGE",image_BGR)
+        cv2.waitKey(1)
+
+        image_BGR = image_converter.to_bgra_array(sensor_data["CameraRGB_Due"])
+        image_BGR = cv2.resize(image_BGR,showing_dims)
+        cv2.imshow("BGRA_IMAGE",image_BGR)
+        cv2.waitKey(1)
+
+def preprocess_image(image, image_h=416, image_w=416):
+    #image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.resize(image, (image_h, image_w))
+    image = image/255
+    image = np.expand_dims(image, 0)
+
+    return image
+###########################################################################
+
 def make_correction(waypoint,previuos_waypoint,desired_speed):
     dx = waypoint[0] - previuos_waypoint[0]
     dy = waypoint[1] - previuos_waypoint[1]
@@ -391,9 +439,14 @@ def make_correction(waypoint,previuos_waypoint,desired_speed):
     waypoint_on_lane[2] = desired_speed
 
     return waypoint_on_lane
+
 def exec_waypoint_nav_demo(args):
     """ Executes waypoint navigation demo.
     """
+    with open('traffic_light_detection_module/config.json', 'r') as config_file:
+        config = json.load(config_file)
+    detector = YOLO(config)
+    
     with make_carla_client(args.host, args.port) as client:
         print('Carla client connected.')
 
@@ -779,6 +832,8 @@ def exec_waypoint_nav_demo(args):
             # Gather current data from the CARLA server
             measurement_data, sensor_data = client.read_data()
 
+            #visualize_sensor_data(sensor_data)
+
             # UPDATE HERE the obstacles list
             obstacles = []
 
@@ -813,6 +868,18 @@ def exec_waypoint_nav_demo(args):
                                                  prev_collision_other)
             collided_flag_history.append(collided_flag)
 
+            camera_data_uno = sensor_data.get('CameraRGB_Uno', None)
+            if camera_data_uno is not None:
+                camera_data_uno = to_bgra_array(camera_data_uno)
+                cv2.imshow("CameraRGB_Uno", camera_data_uno)
+                cv2.waitKey(10)
+            camera_data_due = sensor_data.get('CameraRGB_Due', None)
+            if camera_data_due is not None:
+                camera_data_due = to_bgra_array(camera_data_due)
+                camera_data_due = cv2.cvtColor(camera_data_due, cv2.COLOR_BGR2RGB)
+                cv2.imshow("CameraRGB_Due", camera_data_due)
+                cv2.waitKey(10)
+
             # Execute the behaviour and local planning in the current instance
             # Note that updating the local path during every controller update
             # produces issues with the tracking performance (imagine everytime
@@ -822,6 +889,10 @@ def exec_waypoint_nav_demo(args):
             # to be operating at a frequency that is a division to the 
             # simulation frequency.
             if frame % LP_FREQUENCY_DIVISOR == 0:
+                camera_data_due_proc = preprocess_image(camera_data_due)
+                camera_data_due = draw_boxes(camera_data_due, detector.predict_image(camera_data_due_proc), ["go", "stop"])
+                cv2.imshow("CameraRGB_Due", camera_data_due)
+                cv2.waitKey(5)
                 # Compute open loop speed estimate.
                 open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
 

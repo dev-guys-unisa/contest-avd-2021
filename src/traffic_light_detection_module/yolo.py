@@ -12,9 +12,9 @@ sess = tf.Session(config=config)
 import os
 import numpy as np
 
-from postprocessing import decode_netout, interval_overlap, compute_overlap, compute_ap
-from preprocessing import load_image_predict, load_carla_data, load_image_predict_from_numpy_array
-from utils import BatchGenerator
+from .postprocessing import decode_netout, interval_overlap, compute_overlap, compute_ap
+from .preprocessing import load_image_predict, load_carla_data, load_image_predict_from_numpy_array
+from .utils import BatchGenerator
 
 
 BASE_DIR = os.path.dirname(__file__)
@@ -151,6 +151,15 @@ class YOLO(object):
     def predict(self, image_path):
         image = load_image_predict_from_numpy_array(image_path, self.image_h, self.image_w)
 
+        dummy_array = np.zeros((1, 1, 1, 1, self.max_box_per_image, 4))
+        netout = self.model.predict([image, dummy_array])[0]
+
+        boxes = decode_netout(netout=netout, anchors = self.anchors, nb_class=self.nb_class,
+                              obj_threshold=self.obj_thresh, nms_threshold=self.nms_thresh)
+        return boxes
+
+
+    def predict_image(self, image):
         dummy_array = np.zeros((1, 1, 1, 1, self.max_box_per_image, 4))
         netout = self.model.predict([image, dummy_array])[0]
 

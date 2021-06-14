@@ -6,7 +6,7 @@ import os
 from imgaug import augmenters as iaa
 from sklearn.preprocessing import LabelEncoder
 
-from postprocessing import interval_overlap
+from .postprocessing import interval_overlap
 
 
 BASE_DIR = os.path.dirname(__file__)

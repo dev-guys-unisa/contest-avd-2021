@@ -11,7 +11,7 @@
         "classes":               ["go", "stop"],
         "obj_thresh":            0.20,
         "nms_thresh":            0.01,
-        "saved_model_name":      "C:/Users/anton/Desktop/CarlaSimulator/PythonClient/motion_planning_extended_semaphore/traffic_light_detection_module/checkpoints/traffic-light-detection.h5",
+        "saved_model_name":      "/home/vittorio/MaterialeCorsi/CarlaSimulator/PythonClient/AVD_project_codebase/traffic_light_detection_module/checkpoints/traffic-light-detection.h5",
         "obj_scale":             85,
         "no_obj_scale":          75,
         "coord_scale":           70,
