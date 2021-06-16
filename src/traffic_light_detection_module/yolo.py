@@ -3,6 +3,9 @@ from keras.layers import Reshape, Lambda, Conv2D, Input, MaxPooling2D, BatchNorm
 from keras.layers.advanced_activations import LeakyReLU
 from keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard, Callback
 from keras.optimizers import SGD, Adam, RMSprop
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+
 import tensorflow as tf
 
 config = tf.ConfigProto()
@@ -15,6 +18,7 @@ import numpy as np
 from .postprocessing import decode_netout, interval_overlap, compute_overlap, compute_ap
 from .preprocessing import load_image_predict, load_carla_data, load_image_predict_from_numpy_array
 from .utils import BatchGenerator
+
 
 
 BASE_DIR = os.path.dirname(__file__)

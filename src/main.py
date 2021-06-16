@@ -20,8 +20,9 @@ import behavioural_planner
 import cv2
 import json 
 from math import sin, cos, pi, tan, sqrt
-from traffic_light_detection_module.yolo import YOLO
+from traffic_light_detector import TrafficLightDetector
 from traffic_light_detection_module.postprocessing import draw_boxes
+
 
 # Script level imports
 sys.path.append(os.path.abspath(sys.path[0] + '/../..'))
@@ -405,14 +406,6 @@ def visualize_sensor_data(sensor_data, showing_dims=(200,200)):
         image_BGR = cv2.resize(image_BGR,showing_dims)
         cv2.imshow("BGRA_IMAGE",image_BGR)
         cv2.waitKey(1)
-
-def preprocess_image(image, image_h=416, image_w=416):
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    image = cv2.resize(image, (image_h, image_w))
-    image = image/255
-    image = np.expand_dims(image, 0)
-
-    return image
 ###########################################################################
 
 def make_correction(waypoint,previuos_waypoint,desired_speed):
@@ -466,10 +459,11 @@ def exec_waypoint_nav_demo(args):
         client.start_episode(player_start)
 
         ########### DETECTOR ###########
-        with open('traffic_light_detection_module/config.json', 'r') as config_file:
-            config = json.load(config_file)
-            config['model']['saved_model_name']=os.path.join(os.path.realpath(os.path.dirname(__file__)),"traffic_light_detection_module","checkpoints","traffic-light-detection.h5")
-            detector = YOLO(config)
+        #with open('traffic_light_detection_module/config.json', 'r') as config_file:
+        #    config = json.load(config_file)
+        #    config['model']['saved_model_name']=os.path.join(os.path.realpath(os.path.dirname(__file__)),"traffic_light_detection_module","checkpoints","traffic-light-detection.h5")
+        
+        detector = TrafficLightDetector()
         #################################
 
         #############################################
@@ -875,14 +869,14 @@ def exec_waypoint_nav_demo(args):
             camera_data_uno = sensor_data.get('CameraRGB_Uno', None)
             if camera_data_uno is not None:
                 camera_data_uno = to_bgra_array(camera_data_uno)
-                cv2.imshow("CameraRGB_Uno", camera_data_uno)
-                cv2.waitKey(10)
+                #cv2.imshow("CameraRGB_Uno", camera_data_uno)
+                #cv2.waitKey(10)
             camera_data_due = sensor_data.get('CameraRGB_Due', None)
             if camera_data_due is not None:
                 camera_data_due = to_bgra_array(camera_data_due)
                 #camera_data_due = cv2.cvtColor(camera_data_due, cv2.COLOR_BGR2RGB)
-                cv2.imshow("CameraRGB_Due", camera_data_due)
-                cv2.waitKey(10)
+                #cv2.imshow("CameraRGB_Due", camera_data_due)
+                #cv2.waitKey(10)
 
             # Execute the behaviour and local planning in the current instance
             # Note that updating the local path during every controller update
@@ -893,15 +887,24 @@ def exec_waypoint_nav_demo(args):
             # to be operating at a frequency that is a division to the 
             # simulation frequency.
             if frame % LP_FREQUENCY_DIVISOR == 0:
-                camera_data_due_proc = preprocess_image(camera_data_due)
-                camera_data_due = draw_boxes(camera_data_due, detector.predict_image(camera_data_due_proc), ["go", "stop"])
-                cv2.imshow("CameraRGB_Due", camera_data_due)
-                cv2.waitKey(5)
-                camera_data_uno_proc = preprocess_image(camera_data_uno)
-                camera_data_uno = draw_boxes(camera_data_uno, detector.predict_image(camera_data_uno_proc), ["go", "stop"])
-                cv2.imshow("CameraRGB_Uno", camera_data_uno)
+                #camera_data_due_proc = preprocess_image(camera_data_due)
+                boxes2 = detector.predict_image(camera_data_due)
+
+                camera_data_due = detector.draw_boxes(camera_data_due, boxes2)
+                #cv2.imshow("CameraRGB_Due", camera_data_due)
+                #cv2.waitKey(5)
+                #camera_data_uno_proc = preprocess_image(camera_data_uno)
+                
+                boxes1 = detector.predict_image(camera_data_uno)
+                
+                camera_data_uno = detector.draw_boxes(camera_data_uno, boxes1)
+                #cv2.imshow("CameraRGB_Uno", camera_data_uno)
+                cv2.imshow("Front Cameras", np.hstack((camera_data_uno, camera_data_due)))
                 cv2.waitKey(5)
 
+                light_state = detector.update_state(boxes1, boxes2)
+                print("Stato del Semaforo: ", light_state)
+                print("\n")
                 # Compute open loop speed estimate.
                 open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
 
