@@ -24,7 +24,7 @@ from traffic_light_detection_module.yolo import YOLO
 from traffic_light_detection_module.postprocessing import draw_boxes
 
 # Script level imports
-sys.path.append(os.path.abspath(sys.path[0] + '/..'))
+sys.path.append(os.path.abspath(sys.path[0] + '/../..'))
 import live_plotter as lv   # Custom live plotting library
 from carla            import sensor
 from carla.client     import make_carla_client, VehicleControl
@@ -407,7 +407,7 @@ def visualize_sensor_data(sensor_data, showing_dims=(200,200)):
         cv2.waitKey(1)
 
 def preprocess_image(image, image_h=416, image_w=416):
-    #image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     image = cv2.resize(image, (image_h, image_w))
     image = image/255
     image = np.expand_dims(image, 0)
@@ -443,9 +443,6 @@ def make_correction(waypoint,previuos_waypoint,desired_speed):
 def exec_waypoint_nav_demo(args):
     """ Executes waypoint navigation demo.
     """
-    with open('traffic_light_detection_module/config.json', 'r') as config_file:
-        config = json.load(config_file)
-    detector = YOLO(config)
     
     with make_carla_client(args.host, args.port) as client:
         print('Carla client connected.')
@@ -467,6 +464,13 @@ def exec_waypoint_nav_demo(args):
         # to start the episode.
         print('Starting new episode at %r...' % scene.map_name)
         client.start_episode(player_start)
+
+        ########### DETECTOR ###########
+        with open('traffic_light_detection_module/config.json', 'r') as config_file:
+            config = json.load(config_file)
+            config['model']['saved_model_name']=os.path.join(os.path.realpath(os.path.dirname(__file__)),"traffic_light_detection_module","checkpoints","traffic-light-detection.h5")
+            detector = YOLO(config)
+        #################################
 
         #############################################
         # Load Configurations
@@ -876,7 +880,7 @@ def exec_waypoint_nav_demo(args):
             camera_data_due = sensor_data.get('CameraRGB_Due', None)
             if camera_data_due is not None:
                 camera_data_due = to_bgra_array(camera_data_due)
-                camera_data_due = cv2.cvtColor(camera_data_due, cv2.COLOR_BGR2RGB)
+                #camera_data_due = cv2.cvtColor(camera_data_due, cv2.COLOR_BGR2RGB)
                 cv2.imshow("CameraRGB_Due", camera_data_due)
                 cv2.waitKey(10)
 
@@ -893,6 +897,11 @@ def exec_waypoint_nav_demo(args):
                 camera_data_due = draw_boxes(camera_data_due, detector.predict_image(camera_data_due_proc), ["go", "stop"])
                 cv2.imshow("CameraRGB_Due", camera_data_due)
                 cv2.waitKey(5)
+                camera_data_uno_proc = preprocess_image(camera_data_uno)
+                camera_data_uno = draw_boxes(camera_data_uno, detector.predict_image(camera_data_uno_proc), ["go", "stop"])
+                cv2.imshow("CameraRGB_Uno", camera_data_uno)
+                cv2.waitKey(5)
+
                 # Compute open loop speed estimate.
                 open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
 
@@ -1127,7 +1136,7 @@ def main():
         '-q', '--quality-level',
         choices=['Low', 'Epic'],
         type=lambda s: s.title(),
-        default='Low',
+        default='Epic',
         help='graphics quality level.')
     argparser.add_argument(
         '-c', '--carla-settings',
