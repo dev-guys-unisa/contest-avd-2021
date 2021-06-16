@@ -23,6 +23,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+src/traffic_light_detection_module/__pycache__/
 
 # C extensions
 *.so
