@@ -22,8 +22,8 @@ class TrafficLightState(Enum):
 class TrafficLightDetector(YOLO):
     # Minimum threshold to refuse false positives
     MIN_TH = 0.1
-    MAX_TH1 = 0.30
-    MAX_TH2 = 0.45
+    MAX_TH1 = 0.25
+    MAX_TH2 = 0.40
 
     # Minimum number of frames before change state
     MIN_STOP_FRAMES = 5     # Min frames to choice STOP signal 

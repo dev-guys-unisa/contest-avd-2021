@@ -242,7 +242,7 @@ class BehaviouralPlanner:
             lead_car_distance = np.linalg.norm(lead_car_delta_vector)
 
             # Add a 15m buffer to prevent oscillations for the distance check.
-            if lead_car_distance < self._follow_lead_vehicle_lookahead + 15:
+            if lead_car_distance > self._follow_lead_vehicle_lookahead + 15:
                 return
             # Check to see if the lead vehicle is still within the ego vehicle's
             # frame of view.
