@@ -99,7 +99,7 @@ PATH_SELECT_WEIGHT     = 10
 A_MAX                  = 2.5              # m/s^2
 SLOW_SPEED             = 2.0              # m/s
 STOP_LINE_BUFFER       = 3.5              # m
-LEAD_VEHICLE_LOOKAHEAD = 20.0             # m
+LEAD_VEHICLE_LOOKAHEAD = 10.0             # m
 LP_FREQUENCY_DIVISOR   = 2                # Frequency divisor to make the 
                                           # local planner operate at a lower
                                           # frequency than the controller
@@ -893,7 +893,8 @@ def exec_waypoint_nav_demo(args):
                         lead_car_pos = [agent.vehicle.transform.location.x, agent.vehicle.transform.location.y]
                         lead_car_length = agent.vehicle.bounding_box.extent.x
                         lead_car_speed = agent.vehicle.forward_speed
-                        print("Lead car pos: ",lead_car_pos,"\n")
+                        print("Lead car pos: ",lead_car_pos)
+                        print("Lead car speed: ", lead_car_speed,"\n")
             #######################################################
 
             if frame % LP_FREQUENCY_DIVISOR == 0:
