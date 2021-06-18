@@ -14,12 +14,12 @@ STOP_THRESHOLD = 0.02
 STOP_COUNTS = 10
 
 # Distance from intersection where we spot the stop line
-DIST_INTER = 15 # meters
+DIST_INTER = 20 # meters
 # Minimum distance from the intersection to which we want to stop for a RED light
-DIST_STOP_INTER = 7.0 # meters
+DIST_STOP_INTER = 4.0 # meters
 
 # Radius on the Y axis for the Intersection ahead check.
-RELATIVE_DIST_INTER_Y = 6.0
+RELATIVE_DIST_INTER_Y = 3.5
 
 
 class BehaviouralPlanner:
@@ -138,13 +138,14 @@ class BehaviouralPlanner:
             self._goal_state = waypoints[goal_index]
             print("Semaforo Behav: ", self._lightstate)
             if self._lightstate == TrafficLightState.STOP:
-                print("Ho visto il semaforo rosso e sto rallentando...")
+                print("Passo allo stato -> DECEL AND STOP")
                 self._state = DECELERATE_TO_STOP
-                intersection_index = self.intersection_goal(waypoints, ego_state, closest_index, goal_index)
+                # intersection_index = self.intersection_goal(waypoints, ego_state, closest_index, goal_index)
 
-                if intersection_index is not None:
-                    self._goal_index = intersection_index
-                    self._goal_state = waypoints[intersection_index]
+                # if intersection_index is not None:
+                #     self._goal_index = intersection_index
+                #     self._goal_state = waypoints[intersection_index]
+                #     self._goal_state[2] = 0
 
         # In this state, check if we have reached a complete stop. Use the
         # closed loop speed to do so, to ensure we are actually at a complete
@@ -173,8 +174,9 @@ class BehaviouralPlanner:
                 #if not stop_sign_found: self._state = FOLLOW_LANE
 
                 self._state = FOLLOW_LANE
+                intersection_index = None
 
-            if self._lightstate == TrafficLightState.STOP:
+            else:
                 print("Ho visto il semaforo rosso e sto rallentando...")
                 self._state = DECELERATE_TO_STOP
                 closest_len, closest_index = get_closest_index(waypoints, ego_state)
@@ -182,11 +184,11 @@ class BehaviouralPlanner:
                 while waypoints[goal_index][2] <= 0.1: goal_index += 1
 
                 intersection_index = self.intersection_goal(waypoints, ego_state,closest_index, goal_index)
-
                 if intersection_index is not None:
                     self._goal_index = intersection_index
                     self._goal_state = waypoints[intersection_index]
-    
+                    self._goal_state[2] = 0
+
         else:
             raise ValueError('Invalid state value.')
 

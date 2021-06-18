@@ -99,7 +99,7 @@ PATH_SELECT_WEIGHT     = 10
 A_MAX                  = 2.5              # m/s^2
 SLOW_SPEED             = 2.0              # m/s
 STOP_LINE_BUFFER       = 3.5              # m
-LEAD_VEHICLE_LOOKAHEAD = 10.0             # m
+LEAD_VEHICLE_LOOKAHEAD = 15.0             # m
 LP_FREQUENCY_DIVISOR   = 2                # Frequency divisor to make the 
                                           # local planner operate at a lower
                                           # frequency than the controller
@@ -116,17 +116,30 @@ INTERP_DISTANCE_RES       = 0.01 # distance between interpolated points
 CONTROLLER_OUTPUT_FOLDER = os.path.dirname(os.path.realpath(__file__)) +\
                            '/controller_output/'
 
-# Camera parameters
-camera_parameters = {}
-camera_parameters['x'] = 1.8
-camera_parameters['y'] = 0
-camera_parameters['z'] = 1.3
-camera_parameters['width'] = 400
-camera_parameters['height'] = 400
-camera_parameters['fov'] = 90
-camera_parameters['roll'] = 0
-camera_parameters['pitch'] = 0
-camera_parameters['yaw'] = 10
+features=['x','y','z','width','height','fov','roll','pitch','yaw']
+camera_parameters = {'camera1':{f:0 for f in features}, 'camera2':{f:0 for f in features}}
+
+# camera 1 parameters
+camera_parameters['camera1']['x'] = 2.0
+camera_parameters['camera1']['y'] = 0
+camera_parameters['camera1']['z'] = 1.3
+camera_parameters['camera1']['width'] = 400
+camera_parameters['camera1']['height'] = 400
+camera_parameters['camera1']['fov'] = 120
+camera_parameters['camera1']['roll'] = 0
+camera_parameters['camera1']['pitch'] = -6.5
+camera_parameters['camera1']['yaw'] = 0
+
+# camera 2 parameters
+camera_parameters['camera2']['x'] = 1.5
+camera_parameters['camera2']['y'] = 0
+camera_parameters['camera2']['z'] = 1.3
+camera_parameters['camera2']['width'] = 400
+camera_parameters['camera2']['height'] = 400
+camera_parameters['camera2']['fov'] = 60
+camera_parameters['camera2']['roll'] = 0
+camera_parameters['camera2']['pitch'] = 0
+camera_parameters['camera2']['yaw'] = 20
 
 def rotate_x(angle):
     R = np.mat([[ 1,         0,           0],
@@ -204,29 +217,40 @@ def make_carla_settings(args):
         WeatherId=SIMWEATHER,
         QualityLevel=args.quality_level)
 
-    # Common cameras settings
-    cam_height = camera_parameters['z'] 
-    cam_x_pos = camera_parameters['x']
-    cam_y_pos = camera_parameters['y']
-    camera_width = camera_parameters['width']
-    camera_height = camera_parameters['height']
-    camera_fov = camera_parameters['fov']
-    camera_roll = camera_parameters['roll']
-    camera_pitch = camera_parameters['pitch']
-    camera_yaw = camera_parameters['yaw']
+    # GET 
+    camera1_z_pos = camera_parameters['camera1']['z'] 
+    camera1_x_pos = camera_parameters['camera1']['x']
+    camera1_y_pos = camera_parameters['camera1']['y']
+    camera1_width = camera_parameters['camera1']['width']
+    camera1_height = camera_parameters['camera1']['height']
+    camera1_fov = camera_parameters['camera1']['fov']
+    camera1_roll = camera_parameters['camera1']['roll']
+    camera1_pitch = camera_parameters['camera1']['pitch']
+    camera1_yaw = camera_parameters['camera1']['yaw']
+
+    camera2_z_pos = camera_parameters['camera2']['z'] 
+    camera2_x_pos = camera_parameters['camera2']['x']
+    camera2_y_pos = camera_parameters['camera2']['y']
+    camera2_width = camera_parameters['camera2']['width']
+    camera2_height = camera_parameters['camera2']['height']
+    camera2_fov = camera_parameters['camera2']['fov']
+    camera2_roll = camera_parameters['camera2']['roll']
+    camera2_pitch = camera_parameters['camera2']['pitch']
+    camera2_yaw = camera_parameters['camera2']['yaw']
 
     ## Declare here your sensors ##
     # RGB Camera 1
     camera0 = Camera("CameraRGB_Uno")
-    camera0.set_image_size(camera_width, camera_height)
-    camera0.set(FOV=camera_fov + 30) # 120°
-    camera0.set_position(cam_x_pos, cam_y_pos, cam_height)
+    camera0.set_image_size(camera1_width, camera1_height)
+    camera0.set(FOV=camera1_fov) # 120°
+    camera0.set_position(camera1_x_pos, camera1_y_pos, camera1_z_pos)
+    camera0.set_rotation(camera1_pitch, camera1_yaw, camera1_roll)
     # RGB Camera 2
     camera1 = Camera("CameraRGB_Due")
-    camera1.set_image_size(camera_width, camera_height)
-    camera1.set(FOV=camera_fov - 20) # 70°
-    camera1.set_position(cam_x_pos, cam_y_pos, cam_height)
-    camera1.set_rotation(camera_pitch, camera_yaw, camera_roll)
+    camera1.set_image_size(camera2_width, camera2_height)
+    camera1.set(FOV=camera2_fov) # 60°
+    camera1.set_position(camera2_x_pos, camera2_y_pos, camera2_z_pos)
+    camera1.set_rotation(camera2_pitch, camera2_yaw, camera2_roll)
 
     settings.add_sensor(camera0)
     settings.add_sensor(camera1)
@@ -542,7 +566,7 @@ def exec_waypoint_nav_demo(args):
 
         waypoints = []
         waypoints_route = mission_planner.compute_route(source, source_ori, destination, destination_ori)
-        desired_speed = 5.0
+        desired_speed = 6
         turn_speed    = 2.5
 
         intersection_nodes = mission_planner.get_intersection_nodes()
@@ -920,6 +944,8 @@ def exec_waypoint_nav_demo(args):
 
                 # Perform a state transition in the behavioural planner.
                 bp.transition_state(waypoints, ego_state, current_speed)
+
+                print("Goal Index: ", bp._goal_index)
 
                 if lead_car_pos is not None:
                     bp.check_for_lead_vehicle(ego_state, lead_car_pos)
