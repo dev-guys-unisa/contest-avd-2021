@@ -91,7 +91,7 @@ class TrafficLightDetector(YOLO):
         boxes_ = list(filter(lambda b: b.get_score() > TrafficLightDetector.MIN_TH, boxes))
 
         if len(boxes_) == 0:
-            return TrafficLightState.NO_TL, 1.0
+            return TrafficLightState.NO_TL, 0
 
         # Heuristic
         box = sorted(boxes_, key=lambda b: b.get_area(), reverse=True)[0]

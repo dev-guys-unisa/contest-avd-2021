@@ -113,7 +113,10 @@ class VelocityPlanner:
         # For our profile, use the open loop speed as our initial speed.
         start_speed = ego_state[3]
         # Generate a trapezoidal profile to decelerate to stop.
-        if decelerate_to_stop:
+        if decelerate_to_stop and lead_car_state is not None and follow_lead_vehicle:
+            profile = self.follow_profile(path, start_speed, 0,lead_car_state)
+            
+        elif decelerate_to_stop:
             profile = self.decelerate_profile(path, start_speed)
 
         # If we need to follow the lead vehicle, make sure we decelerate to its

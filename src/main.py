@@ -550,6 +550,8 @@ def exec_waypoint_nav_demo(args):
         turn_cooldown = 0
         prev_x = False
         prev_y = False
+
+        intersections_location = []
         # Put waypoints in the lane
         previuos_waypoint = mission_planner._map.convert_to_world(waypoints_route[0])
         for i in range(1,len(waypoints_route)):
@@ -577,6 +579,8 @@ def exec_waypoint_nav_demo(args):
                 start_intersection = make_correction(start_intersection,prev_start_intersection,turn_speed)
                 end_intersection = make_correction(end_intersection,center_intersection,turn_speed)
                 
+                intersections_location.append(start_intersection)
+
                 dx = start_intersection[0] - end_intersection[0]
                 dy = start_intersection[1] - end_intersection[1]
 
@@ -786,7 +790,7 @@ def exec_waypoint_nav_demo(args):
                                         SLOW_SPEED,
                                         STOP_LINE_BUFFER)
         bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE,
-                                                    LEAD_VEHICLE_LOOKAHEAD)
+                                                    LEAD_VEHICLE_LOOKAHEAD, intersections_location)
 
         #############################################
         # Scenario Execution Loop
@@ -901,6 +905,7 @@ def exec_waypoint_nav_demo(args):
                 cv2.waitKey(5)
 
                 light_state = detector.update_state(boxes1, boxes2)
+                bp.set_lightstate(light_state)
                 print("Stato del Semaforo: ", light_state,"\n")
                 # Compute open loop speed estimate.
                 open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
@@ -943,8 +948,15 @@ def exec_waypoint_nav_demo(args):
                 if best_path is not None:
                     # Compute the velocity profile for the path, and compute the waypoints.
                     desired_speed = bp._goal_state[2]
+
+                    if lead_car_pos is not None:
+                        lead_car_state = [lead_car_pos[0], lead_car_pos[1], lead_car_speed]
+
+                    else:
+                        lead_car_state = None
+
                     decelerate_to_stop = bp._state == behavioural_planner.DECELERATE_TO_STOP
-                    local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, None, bp._follow_lead_vehicle)
+                    local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, lead_car_state, bp._follow_lead_vehicle)
 
                     if local_waypoints != None:
                         # Update the controller waypoint path with the best local path.
