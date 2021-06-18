@@ -16,10 +16,10 @@ STOP_COUNTS = 10
 # Distance from intersection where we spot the stop line
 DIST_INTER = 15 # meters
 # Minimum distance from the intersection to which we want to stop for a RED light
-DIST_STOP_INTER = 5.0 # meters
+DIST_STOP_INTER = 7.0 # meters
 
 # Radius on the Y axis for the Intersection ahead check.
-RELATIVE_DIST_INTER_Y = 3.5
+RELATIVE_DIST_INTER_Y = 6.0
 
 
 class BehaviouralPlanner:
@@ -180,7 +180,7 @@ class BehaviouralPlanner:
                 closest_len, closest_index = get_closest_index(waypoints, ego_state)
                 goal_index = self.get_goal_index(waypoints, ego_state, closest_len, closest_index)
                 while waypoints[goal_index][2] <= 0.1: goal_index += 1
-                
+
                 intersection_index = self.intersection_goal(waypoints, ego_state,closest_index, goal_index)
 
                 if intersection_index is not None:
