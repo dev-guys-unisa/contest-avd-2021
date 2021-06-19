@@ -2,12 +2,12 @@
 import numpy as np
 import math
 from traffic_light_detector import TrafficLightState
-from helpers import transform_world_to_ego_frame
+from helpers import transform_world_to_ego_frame, calc_distance
 
 # State machine states
 FOLLOW_LANE = 0
 DECELERATE_TO_STOP = 1
-STAY_STOPPED = 2
+STOP_FOR_OBSTACLES = 2
 # Stop speed threshold
 STOP_THRESHOLD = 0.02
 # Number of cycles before moving from stop sign.
@@ -23,7 +23,7 @@ RELATIVE_DIST_INTER_Y = 3.5
 
 
 class BehaviouralPlanner:
-    def __init__(self, lookahead, lead_vehicle_lookahead, intersection):
+    def __init__(self, lookahead, lead_vehicle_lookahead, intersection, a_max):
         self._lookahead                     = lookahead
         self._follow_lead_vehicle_lookahead = lead_vehicle_lookahead
         self._state                         = FOLLOW_LANE
@@ -35,14 +35,18 @@ class BehaviouralPlanner:
         self._lookahead_collision_index     = 0
         self._lightstate                    = TrafficLightState.NO_TL
         self._intersection                  = intersection
+        self._emergency_distance            = 0
+        self._a_max                         = a_max
     
     def set_lookahead(self, lookahead):
         self._lookahead = lookahead
 
     def set_lightstate(self, lighstate):
         self._lightstate = lighstate
-
     
+    def set_emergency_distance(self, emergency_distance):
+        self._emergency_distance = emergency_distance
+
     def intersection_goal(self, waypoints, ego_state,closest_index, goal_index):
         for i in range(closest_index, goal_index):
             for inter in self._intersection:
@@ -146,6 +150,13 @@ class BehaviouralPlanner:
                 #     self._goal_index = intersection_index
                 #     self._goal_state = waypoints[intersection_index]
                 #     self._goal_state[2] = 0
+            
+            elif self._obstacle_on_lane:
+                #self._emergency_distance = calc_distance(closed_loop_speed, 0, -self._a_max)
+                self._goal_state[2] = 0
+                print("Follow Lane e ho visto la persona. Setto stato emergenza")
+                self._state = STOP_FOR_OBSTACLES
+
 
         # In this state, check if we have reached a complete stop. Use the
         # closed loop speed to do so, to ensure we are actually at a complete
@@ -154,7 +165,12 @@ class BehaviouralPlanner:
         elif self._state == DECELERATE_TO_STOP:
             print("DECELERATE_AND_STOP")
 
-            if self._lightstate == TrafficLightState.GO or self._lightstate == TrafficLightState.NO_TL:
+            if self._obstacle_on_lane:
+                #self._emergency_distance = calc_distance(closed_loop_speed, 0, -self._a_max)
+                self._goal_state[2] = 0
+                self._state = STOP_FOR_OBSTACLES
+
+            elif self._lightstate == TrafficLightState.GO or self._lightstate == TrafficLightState.NO_TL:
                 #l'ulteriore controllo NO_TL è per non rimanere bloccato al semaforo quando non vede nulla
 
                 closest_len, closest_index = get_closest_index(waypoints, ego_state)
@@ -188,6 +204,11 @@ class BehaviouralPlanner:
                     self._goal_index = intersection_index
                     self._goal_state = waypoints[intersection_index]
                     self._goal_state[2] = 0
+
+        elif self._state == STOP_FOR_OBSTACLES:
+            print("STOP_FOR_OBSTACLES")
+            if not self._obstacle_on_lane:
+                self._state = FOLLOW_LANE
 
         else:
             raise ValueError('Invalid state value.')

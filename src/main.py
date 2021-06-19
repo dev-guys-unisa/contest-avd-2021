@@ -42,12 +42,12 @@ import carla.image_converter as image_converter
 ###############################################################################
 # CONFIGURABLE PARAMENTERS DURING EXAM
 ###############################################################################
-PLAYER_START_INDEX = 15        #  spawn index for player
-DESTINATION_INDEX = 42        # Setting a Destination HERE
-NUM_PEDESTRIANS        = 30     # total number of pedestrians to spawn
+PLAYER_START_INDEX = 16        #  spawn index for player
+DESTINATION_INDEX = 106       # Setting a Destination HERE
+NUM_PEDESTRIANS        = 300     # total number of pedestrians to spawn
 NUM_VEHICLES           = 50      # total number of vehicles to spawn
-SEED_PEDESTRIANS       = 0      # seed for pedestrian spawn randomizer
-SEED_VEHICLES          = 10     # seed for vehicle spawn randomizer
+SEED_PEDESTRIANS       = 16      # seed for pedestrian spawn randomizer
+SEED_VEHICLES          = 0     # seed for vehicle spawn randomizer
 ###############################################################################àà
 
 ITER_FOR_SIM_TIMESTEP  = 10     # no. iterations to compute approx sim timestep
@@ -814,7 +814,7 @@ def exec_waypoint_nav_demo(args):
                                         SLOW_SPEED,
                                         STOP_LINE_BUFFER)
         bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE,
-                                                    LEAD_VEHICLE_LOOKAHEAD, intersections_location)
+                                                    LEAD_VEHICLE_LOOKAHEAD, intersections_location, A_MAX)
 
         #############################################
         # Scenario Execution Loop
@@ -849,6 +849,10 @@ def exec_waypoint_nav_demo(args):
                 get_current_pose(measurement_data)
             current_speed = measurement_data.player_measurements.forward_speed
             current_timestamp = float(measurement_data.game_timestamp) / 1000.0
+
+            bp.set_emergency_distance(calc_distance(current_speed, 0, -A_MAX))
+
+            print("Emergency distance: ", bp._emergency_distance)
 
             # Wait for some initial time before starting the demo
             if current_timestamp <= WAIT_TIME_BEFORE_START:
@@ -895,6 +899,10 @@ def exec_waypoint_nav_demo(args):
             lead_car_pos    = None
             lead_car_length = None
             lead_car_speed  = None
+
+            list_norm = []
+            bp._obstacle_on_lane = False
+
             for agent in measurement_data.non_player_agents:
                 agent_id = agent.id
                 if agent.HasField('vehicle'):
@@ -919,6 +927,38 @@ def exec_waypoint_nav_demo(args):
                         lead_car_speed = agent.vehicle.forward_speed
                         print("Lead car pos: ",lead_car_pos)
                         print("Lead car speed: ", lead_car_speed,"\n")
+                    #TO DO: Gestire ostacoli in mezzo alla strada
+
+                elif agent.HasField('pedestrian'):
+                    pedestrian = agent.pedestrian
+                    transform = pedestrian.transform
+                    location = transform.location
+                    rotation = transform.rotation
+                    loc_relative = transform_world_to_ego_frame([location.x, location.y, location.z],
+                        [current_x, current_y, current_z],
+                        [current_roll, current_pitch, current_yaw]
+                    )
+
+                    list_norm.append(np.linalg.norm(loc_relative))
+                    #print("NORMA loc relative: ", np.linalg.norm(loc_relative))
+                    if np.linalg.norm(loc_relative) < 2 * bp._emergency_distance:
+                        if check_obstacle_future_intersection(
+                            pedestrian,
+                            2 * bp._emergency_distance, #Attenzione !
+                            loc_relative,
+                            [current_x, current_y, current_z],
+                            [current_roll, current_pitch, current_yaw], speed=pedestrian.forward_speed + 3):
+
+                                print("\nIndividuato ostacolo in futuro\n")
+                                bp._obstacle_on_lane = True
+
+                        else:
+                            # ...or add it as an obstacle
+                            print("Persona scartato")
+                            obstacles.append(get_obstacle_box_points(location, pedestrian.bounding_box.extent, rotation))
+            
+            print("Minimo List Norm: ", min(list_norm))
+
             #######################################################
 
             if frame % LP_FREQUENCY_DIVISOR == 0:
@@ -961,7 +1001,7 @@ def exec_waypoint_nav_demo(args):
                 paths = local_planner.transform_paths(paths, ego_state)
 
                 # Perform collision checking.
-                collision_check_array = lp._collision_checker.collision_check(paths, [])
+                collision_check_array = lp._collision_checker.collision_check(paths, obstacles)
 
                 # Compute the best local path.
                 best_index = lp._collision_checker.select_best_path_index(paths, collision_check_array, bp._goal_state)
@@ -983,7 +1023,7 @@ def exec_waypoint_nav_demo(args):
                         lead_car_state = None
 
                     decelerate_to_stop = bp._state == behavioural_planner.DECELERATE_TO_STOP
-                    local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, lead_car_state, bp._follow_lead_vehicle)
+                    local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, lead_car_state, bp._follow_lead_vehicle, bp._obstacle_on_lane)
 
                     if local_waypoints != None:
                         # Update the controller waypoint path with the best local path.
@@ -1112,7 +1152,7 @@ def exec_waypoint_nav_demo(args):
             send_control_command(client,
                                  throttle=cmd_throttle,
                                  steer=cmd_steer,
-                                 brake=cmd_brake)
+                                 brake=cmd_brake if not bp._obstacle_on_lane else 1.0)
 
             # Find if reached the end of waypoint. If the car is within
             # DIST_THRESHOLD_TO_LAST_WAYPOINT to the last waypoint,

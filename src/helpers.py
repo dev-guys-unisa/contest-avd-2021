@@ -217,11 +217,7 @@ def check_obstacle_future_intersection(entity, height, loc_relative, ego, ego_rp
     # Check if entity's trajectory intersect ego's trajectory
     a = (0, 0)
     b = (height, 0)
-    c = transform_world_to_ego_frame(
-        translate_position(entity, -5),
-        ego,
-        ego_rpy
-    )[:-1]
+    c = loc_relative
     d = transform_world_to_ego_frame(
         estimate_next_entity_pos(entity, speed=speed),
         ego,

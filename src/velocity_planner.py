@@ -61,7 +61,7 @@ class VelocityPlanner:
     # Recall that the path is of the form [x_points, y_points, t_points].
     def compute_velocity_profile(self, path, desired_speed, ego_state, 
                                  closed_loop_speed, decelerate_to_stop, 
-                                 lead_car_state, follow_lead_vehicle):
+                                 lead_car_state, follow_lead_vehicle, obstacle_on_lane):
         """Computes the velocity profile for the local planner path.
         
         args:
@@ -128,6 +128,9 @@ class VelocityPlanner:
                                           lead_car_state)
 
         # Otherwise, compute the profile to reach our desired speed.
+        elif obstacle_on_lane:
+            profile = self.nominal_profile(path, start_speed, 0)
+
         else:
             profile = self.nominal_profile(path, start_speed, desired_speed)
 
