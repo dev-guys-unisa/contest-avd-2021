@@ -129,7 +129,9 @@ class VelocityPlanner:
 
         # Otherwise, compute the profile to reach our desired speed.
         elif obstacle_on_lane:
+            print("Ostacolo: decelero")
             profile = self.nominal_profile(path, start_speed, 0)
+            #profile = self.decelerate_profile(path,start_speed)
 
         else:
             profile = self.nominal_profile(path, start_speed, desired_speed)

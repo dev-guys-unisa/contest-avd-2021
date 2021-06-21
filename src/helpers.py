@@ -213,11 +213,15 @@ def sad(a, b):
     return d
 
 
-def check_obstacle_future_intersection(entity, height, loc_relative, ego, ego_rpy, speed=None):
+def check_obstacle_future_intersection(entity, dist, loc_relative, ego, ego_rpy, speed=None):
     # Check if entity's trajectory intersect ego's trajectory
     a = (0, 0)
-    b = (height, 0)
-    c = loc_relative
+    b = (dist,0)
+    c = transform_world_to_ego_frame(
+        translate_position(entity,-5) if loc_relative[1]>0 else translate_position(entity,5),
+        ego,
+        ego_rpy
+    )[:-1]
     d = transform_world_to_ego_frame(
         estimate_next_entity_pos(entity, speed=speed),
         ego,

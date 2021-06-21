@@ -42,11 +42,11 @@ import carla.image_converter as image_converter
 ###############################################################################
 # CONFIGURABLE PARAMENTERS DURING EXAM
 ###############################################################################
-PLAYER_START_INDEX = 16        #  spawn index for player
-DESTINATION_INDEX = 106       # Setting a Destination HERE
-NUM_PEDESTRIANS        = 300     # total number of pedestrians to spawn
-NUM_VEHICLES           = 50      # total number of vehicles to spawn
-SEED_PEDESTRIANS       = 16      # seed for pedestrian spawn randomizer
+PLAYER_START_INDEX = 131        #  spawn index for player
+DESTINATION_INDEX = 96      # Setting a Destination HERE
+NUM_PEDESTRIANS        = 100     # total number of pedestrians to spawn
+NUM_VEHICLES           = 30      # total number of vehicles to spawn
+SEED_PEDESTRIANS       = 0      # seed for pedestrian spawn randomizer
 SEED_VEHICLES          = 0     # seed for vehicle spawn randomizer
 ###############################################################################àà
 
@@ -88,6 +88,7 @@ DIST_THRESHOLD_TO_LAST_WAYPOINT = 2.0  # some distance from last position before
                                        # simulation ends
 
 # Planning Constants
+LOOKAHEAD_PED          = 15
 NUM_PATHS = 7
 BP_LOOKAHEAD_BASE      = 16.0              # m
 BP_LOOKAHEAD_TIME      = 1.0              # s
@@ -835,6 +836,7 @@ def exec_waypoint_nav_demo(args):
         prev_collision_other       = 0
 
         for frame in range(TOTAL_EPISODE_FRAMES):
+            print("\n-----FRAME ", frame, " -----")
             # Gather current data from the CARLA server
             measurement_data, sensor_data = client.read_data()
 
@@ -851,8 +853,7 @@ def exec_waypoint_nav_demo(args):
             current_timestamp = float(measurement_data.game_timestamp) / 1000.0
 
             bp.set_emergency_distance(calc_distance(current_speed, 0, -A_MAX))
-
-            print("Emergency distance: ", bp._emergency_distance)
+            print("Emergency distance: ",bp._emergency_distance)
 
             # Wait for some initial time before starting the demo
             if current_timestamp <= WAIT_TIME_BEFORE_START:
@@ -902,6 +903,7 @@ def exec_waypoint_nav_demo(args):
 
             list_norm = []
             bp._obstacle_on_lane = False
+            bp.clear_ped_lists()
 
             for agent in measurement_data.non_player_agents:
                 agent_id = agent.id
@@ -925,8 +927,8 @@ def exec_waypoint_nav_demo(args):
                         lead_car_pos = [agent.vehicle.transform.location.x, agent.vehicle.transform.location.y]
                         lead_car_length = agent.vehicle.bounding_box.extent.x
                         lead_car_speed = agent.vehicle.forward_speed
-                        print("Lead car pos: ",lead_car_pos)
-                        print("Lead car speed: ", lead_car_speed,"\n")
+                        #print("Lead car pos: ",lead_car_pos)
+                        #print("Lead car speed: ", lead_car_speed,"\n")
                     #TO DO: Gestire ostacoli in mezzo alla strada
 
                 elif agent.HasField('pedestrian'):
@@ -939,25 +941,28 @@ def exec_waypoint_nav_demo(args):
                         [current_roll, current_pitch, current_yaw]
                     )
 
-                    list_norm.append(np.linalg.norm(loc_relative))
+                    #list_norm.append(np.linalg.norm(loc_relative))
                     #print("NORMA loc relative: ", np.linalg.norm(loc_relative))
-                    if np.linalg.norm(loc_relative) < 2 * bp._emergency_distance:
+                    norm = np.linalg.norm(loc_relative)
+                    if norm < LOOKAHEAD_PED:
+                        #x,y,_ = estimate_next_entity_pos(measurement_data.player_measurements)
                         if check_obstacle_future_intersection(
                             pedestrian,
-                            2 * bp._emergency_distance, #Attenzione !
+                            LOOKAHEAD_PED,
                             loc_relative,
                             [current_x, current_y, current_z],
-                            [current_roll, current_pitch, current_yaw], speed=pedestrian.forward_speed + 3):
+                            [current_roll, current_pitch, current_yaw]):
 
-                                print("\nIndividuato ostacolo in futuro\n")
+                                print("Individuato ostacolo in futuro -> Pos (world): ", location, " DX" if loc_relative[1]>0 else " SX")
                                 bp._obstacle_on_lane = True
+                                bp.set_pedestrian_loc(loc_relative, norm)
 
                         else:
                             # ...or add it as an obstacle
-                            print("Persona scartato")
+                            print("Persona scartata")
                             obstacles.append(get_obstacle_box_points(location, pedestrian.bounding_box.extent, rotation))
             
-            print("Minimo List Norm: ", min(list_norm))
+            #print("Minimo List Norm: ", min(list_norm))
 
             #######################################################
 
@@ -971,7 +976,7 @@ def exec_waypoint_nav_demo(args):
 
                 light_state = detector.update_state(boxes1, boxes2)
                 bp.set_lightstate(light_state)
-                print("Stato del Semaforo: ", light_state,"\n")
+                print("Stato del Semaforo: ", light_state)
                 # Compute open loop speed estimate.
                 open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
 
@@ -985,11 +990,11 @@ def exec_waypoint_nav_demo(args):
                 # Perform a state transition in the behavioural planner.
                 bp.transition_state(waypoints, ego_state, current_speed)
 
-                print("Goal Index: ", bp._goal_index)
+                #print("Goal Index: ", bp._goal_index)
 
                 if lead_car_pos is not None:
                     bp.check_for_lead_vehicle(ego_state, lead_car_pos)
-                print("Follow vehicle? ",bp._follow_lead_vehicle,"\n")
+                print("Follow vehicle? ",bp._follow_lead_vehicle)
 
                 # Compute the goal state set from the behavioural planner's computed goal state.
                 goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
@@ -1164,6 +1169,8 @@ def exec_waypoint_nav_demo(args):
                 reached_the_end = True
             if reached_the_end:
                 break
+
+            print ("-------------------")
 
         # End of demo - Stop vehicle and Store outputs to the controller output
         # directory.
