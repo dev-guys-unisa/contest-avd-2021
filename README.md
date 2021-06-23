@@ -40,4 +40,35 @@ These are the requirements:
 |7|Future|>= 0.16.0|
 |8|SciPy|>= 0.17.0|
 ___
+# Clone the Repository
+First of all it is necessary to clone the repository in the PythonClient directory in Carla Simulator, by running these commands:
+```bash
+cd ../../CarlaSimulator/PythonClient/
+git clone https://github.com/dev-guys-unisa/contest-avd-2021
+```
+___
+# How to launch a Demo
+Here are some fundamental indications to launch a demo of the project:
+#### Run the Server
+* Linux:
+```bash
+../../CarlaUE4.sh /Game/Maps/Town01 -carla-server -windowed -benchmark -fps=30 -quality-level=Epic
+```
+* Windows:
+```bash
+..\..\CarlaUE4.exe /Game/Maps/Town01 -carla-server -windowed -benchmark -fps=30 -quality-level=Epic
+```
+#### Run the Client
+You have to move in ```src/``` folder of the previous cloned repository and to launch ``` main.py``` file. Here there are the commands for Linux and Windows:
+```bash
+cd ../../CarlaSimulator/PythonClient/contest-avd-2021/src/
+python3.6 main.py
+```
+
+**IMPORTANT**: If you want to launch only the client side, you have to specify the *ip address* and *number of port* of the Server in which Carla is running.
+```bash
+cd ../../CarlaSimulator/PythonClient/contest-avd-2021/src/
+python3.6 main.py --host *ipaddress* --port *port*
+```
+___
 ##### Group 18
