@@ -205,9 +205,7 @@ def translate_position(entity, offset):
 
 def sad(a, b):
     """
-    Given two angles returns the difference in the range [-180, 180]::
-
-    >>> d = b - a
+    Given two angles returns the difference in the range [-180, 180]:
 
     Parameters
     ----------

@@ -22,8 +22,7 @@ import json
 from math import sin, cos, pi, tan, sqrt
 from traffic_light_detector import TrafficLightDetector
 from traffic_light_detection_module.postprocessing import draw_boxes
-from helpers import transform_world_to_ego_frame, line_intersection, sad, estimate_next_entity_pos,\
-    get_obstacle_box_points, check_obstacle_future_intersection, calc_distance
+from utils import transform_world_to_ego_frame, compute_angle_diff, obstacle_to_world, check_obstacle_future_intersection
 
 
 # Script level imports
@@ -43,14 +42,17 @@ import carla.image_converter as image_converter
 ###############################################################################
 # CONFIGURABLE PARAMENTERS DURING EXAM
 ###############################################################################
-PLAYER_START_INDEX = 15      #  spawn index for player
-DESTINATION_INDEX = 42         # Setting a Destination HERE
+PLAYER_START_INDEX     = 15    # spawn index for player
+DESTINATION_INDEX      = 42    # Setting a Destination HERE
 NUM_PEDESTRIANS        = 300   # total number of pedestrians to spawn
-NUM_VEHICLES           = 100     # total number of vehicles to spawn
+NUM_VEHICLES           = 100   # total number of vehicles to spawn
 SEED_PEDESTRIANS       = 0     # seed for pedestrian spawn randomizer
 SEED_VEHICLES          = 0     # seed for vehicle spawn randomizer
 ###############################################################################àà
 
+###############################################################################
+# DECLARATION OF USEFUL CONSTANTS
+###############################################################################
 ITER_FOR_SIM_TIMESTEP  = 10     # no. iterations to compute approx sim timestep
 WAIT_TIME_BEFORE_START = 1.00   # game seconds (time before controller start)
 TOTAL_RUN_TIME         = 5000.00 # game seconds (total runtime before sim end)
@@ -89,8 +91,9 @@ DIST_THRESHOLD_TO_LAST_WAYPOINT = 2.0  # some distance from last position before
                                        # simulation ends
 
 # Planning Constants
-LOOKAHEAD_PEDESTRIAN    = 7
-LOOKAHEAD_VEHICLE       = 7
+LOOKAHEAD_PEDESTRIAN    = 7 # distance (m) within check if there is some pedestrians to be avoided during the path
+LOOKAHEAD_VEHICLE       = 7 # distance (m) within check if there is some vehicles to be avoided during the path 
+
 NUM_PATHS = 7
 BP_LOOKAHEAD_BASE      = 16.0              # m
 BP_LOOKAHEAD_TIME      = 1.0              # s
@@ -107,10 +110,9 @@ LP_FREQUENCY_DIVISOR   = 2                # Frequency divisor to make the
                                           # local planner operate at a lower
                                           # frequency than the controller
                                           # (which operates at the simulation
-                                          # frequency). Must be a natural
-                                          # number.
-DESIRED_SPEED = 6
-TURN_SPEED    = 2.5
+                                          # frequency). Must be a natural number.
+DESIRED_SPEED          = 6                # maximum speed (m/s) to reach in straightforward paths
+TURN_SPEED             = 2.5              # maximum speed (m/s) to reach during turns
 
 # Path interpolation parameters
 INTERP_MAX_POINTS_PLOT    = 10   # number of points used for displaying
@@ -122,61 +124,6 @@ CONTROLLER_OUTPUT_FOLDER = os.path.dirname(os.path.realpath(__file__)) + '/contr
 
 # Path to the configuration file of the sensors
 CAMERA_FILENAME = os.path.dirname(os.path.realpath(__file__)) + '/settings/cams.json'
-
-
-def rotate_x(angle):
-    R = np.mat([[ 1,         0,           0],
-                 [ 0, cos(angle), -sin(angle) ],
-                 [ 0, sin(angle),  cos(angle) ]])
-    return R
-
-def rotate_y(angle):
-    R = np.mat([[ cos(angle), 0,  sin(angle) ],
-                 [ 0,         1,          0 ],
-                 [-sin(angle), 0,  cos(angle) ]])
-    return R
-
-def rotate_z(angle):
-    R = np.mat([[ cos(angle), -sin(angle), 0 ],
-                 [ sin(angle),  cos(angle), 0 ],
-                 [         0,          0, 1 ]])
-    return R
-
-# Transform the obstacle with its boundary point in the global frame
-def obstacle_to_world(location, dimensions, orientation):
-    box_pts = []
-
-    x = location.x
-    y = location.y
-    z = location.z
-
-    yaw = orientation.yaw * pi / 180
-
-    xrad = dimensions.x
-    yrad = dimensions.y
-    zrad = dimensions.z
-
-    # Border points in the obstacle frame
-    cpos = np.array([
-            [-xrad, -xrad, -xrad, 0,    xrad, xrad, xrad,  0    ],
-            [-yrad, 0,     yrad,  yrad, yrad, 0,    -yrad, -yrad]])
-    
-    # Rotation of the obstacle
-    rotyaw = np.array([
-            [np.cos(yaw), np.sin(yaw)],
-            [-np.sin(yaw), np.cos(yaw)]])
-    
-    # Location of the obstacle in the world frame
-    cpos_shift = np.array([
-            [x, x, x, x, x, x, x, x],
-            [y, y, y, y, y, y, y, y]])
-    
-    cpos = np.add(np.matmul(rotyaw, cpos), cpos_shift)
-
-    for j in range(cpos.shape[1]):
-        box_pts.append([cpos[0,j], cpos[1,j]])
-    
-    return box_pts
 
 def make_carla_settings(args):
     """
@@ -201,10 +148,10 @@ def make_carla_settings(args):
         WeatherId=SIMWEATHER,
         QualityLevel=args.quality_level)
 
+    # Retrieve the parameters for the sensors configuration and declare them
     with open(CAMERA_FILENAME, 'r') as cams_config_file:
         cams_config = json.load(cams_config_file)
 
-    # Retrieve the parameters for the sensors configuration and declare them
     camera1_x_pos = cams_config['cam_front']['position'][0]
     camera1_y_pos = cams_config['cam_front']['position'][1]
     camera1_z_pos = cams_config['cam_front']['position'][2] 
@@ -225,19 +172,21 @@ def make_carla_settings(args):
     camera2_pitch = cams_config['cam_tl']['orientation'][1]
     camera2_yaw = cams_config['cam_tl']['orientation'][2]
 
-    ## Sensors Declaration ##
+    #############################################
+    # SENSORS DECLARATION
+    #############################################
 
     # RGB Camera for front
     camera0 = Camera("CameraRGB_Front")
     camera0.set_image_size(camera1_width, camera1_height)
-    camera0.set(FOV = camera1_fov) # 120°
+    camera0.set(FOV = camera1_fov)
     camera0.set_position(camera1_x_pos, camera1_y_pos, camera1_z_pos)
     camera0.set_rotation(camera1_pitch, camera1_yaw, camera1_roll)
 
     # RGB Camera for Traffic Light Detection
     camera1 = Camera("CameraRGB_TL")
     camera1.set_image_size(camera2_width, camera2_height)
-    camera1.set(FOV = camera2_fov) # 60°
+    camera1.set(FOV = camera2_fov)
     camera1.set_position(camera2_x_pos, camera2_y_pos, camera2_z_pos)
     camera1.set_rotation(camera2_pitch, camera2_yaw, camera2_roll)
 
@@ -456,12 +405,13 @@ def exec_waypoint_nav_demo(args):
         print('Starting new episode at %r...' % scene.map_name)
         client.start_episode(player_start)
 
-        ########### DETECTOR ###########
+        #############################################
+        # DETECTOR DECLARATION
+        #############################################
         detector = TrafficLightDetector()
-        #################################
 
         #############################################
-        # Load Configurations
+        # LOAD CONFIGURATIONS
         #############################################
 
         # Load configuration file (options.cfg) and then parses for the various
@@ -486,7 +436,7 @@ def exec_waypoint_nav_demo(args):
         mission_planner = CityTrack("Town01")
 
         #############################################
-        # Determine simulation average timestep (and total frames)
+        # DETERMINE SIMULATION AVERAGE TIMESTEP (AND TOTAL FRAMES)
         #############################################
         # Ensure at least one frame is used to compute average timestep
         num_iterations = ITER_FOR_SIM_TIMESTEP
@@ -521,7 +471,7 @@ def exec_waypoint_nav_demo(args):
         TOTAL_EPISODE_FRAMES = int((TOTAL_RUN_TIME + WAIT_TIME_BEFORE_START) / SIMULATION_TIME_STEP) + TOTAL_FRAME_BUFFER
 
         #############################################
-        # Frame-by-Frame Iteration and Initialization
+        # FRAME-BY-FRAME ITERATION AND INITIALIZATION
         #############################################
         # Store pose history starting from the start position
         measurement_data, sensor_data = client.read_data()
@@ -536,13 +486,12 @@ def exec_waypoint_nav_demo(args):
         collided_flag_history = [False]  # assume player starts off non-collided
 
         #############################################
-        # Settings Waypoints
+        # SETTINGS WAYPOINTS
         #############################################
         starting    = scene.player_start_spots[PLAYER_START_INDEX]
         destination = scene.player_start_spots[DESTINATION_INDEX]
 
-        # Starting position is the current position
-        # (x, y, z, pitch, roll, yaw)
+        # Starting position is the current position (x, y, z, pitch, roll, yaw)
         source_pos = [starting.location.x, starting.location.y, starting.location.z]
         source_ori = [starting.orientation.x, starting.orientation.y]
         source = mission_planner.project_node(source_pos)
@@ -552,6 +501,7 @@ def exec_waypoint_nav_demo(args):
         destination_ori = [destination.orientation.x, destination.orientation.y]
         destination = mission_planner.project_node(destination_pos)
 
+        # Compute route from starting to goal position
         waypoints = []
         waypoints_route = mission_planner.compute_route(source, source_ori, destination, destination_ori)
 
@@ -561,6 +511,7 @@ def exec_waypoint_nav_demo(args):
         prev_x = False
         prev_y = False
 
+        #TODO: togliere o meno
         #intersections_location = []
         # Put waypoints in the lane
         previuos_waypoint = mission_planner._map.convert_to_world(waypoints_route[0])
@@ -589,6 +540,7 @@ def exec_waypoint_nav_demo(args):
                 start_intersection = make_correction(start_intersection, prev_start_intersection, TURN_SPEED)
                 end_intersection = make_correction(end_intersection, center_intersection, TURN_SPEED)
                 
+                #TODO: TOGLIERE O MENO
                 # Save all the intersection in order to be able to stop at the traffic lights
                 #intersections_location.append(start_intersection)
 
@@ -679,7 +631,7 @@ def exec_waypoint_nav_demo(args):
         controller = controller2d.Controller2D(waypoints)
 
         #############################################
-        # Vehicle Trajectory Live Plotting Setup
+        # VEHICLE TRAJECTORY LIVE PLOTTING SETUP
         #############################################
         # Uses the live plotter to generate live feedback during the simulation
         # The two feedback includes the trajectory feedback and
@@ -688,9 +640,7 @@ def exec_waypoint_nav_demo(args):
             lp_traj = lv.LivePlotter(tk_title="Trajectory Trace")
             lp_1d = lv.LivePlotter(tk_title="Controls Feedback")
 
-            ###
             # Add 2D position / trajectory plot
-            ###
             trajectory_fig = lp_traj.plot_new_dynamic_2d_figure(
                     title='Vehicle Trajectory',
                     figsize=(FIGSIZE_X_INCHES, FIGSIZE_Y_INCHES),
@@ -784,9 +734,8 @@ def exec_waypoint_nav_demo(args):
                 lp_traj._root.withdraw()
                 lp_1d._root.withdraw()        
 
-
         #############################################
-        # Local Planner Variables
+        # PLANNING MODULES DECLARATION
         #############################################
         wp_goal_index   = 0
         local_waypoints = None
@@ -800,13 +749,14 @@ def exec_waypoint_nav_demo(args):
                                         A_MAX,
                                         SLOW_SPEED,
                                         STOP_LINE_BUFFER)
+        #TODO: terzo e quarto argomento del costruttore servono?
         bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE,
                                                     LEAD_VEHICLE_LOOKAHEAD, 
                                                     [], 
                                                     A_MAX)
 
         #############################################
-        # Scenario Execution Loop
+        # SCENARIO EXECUTION LOOP
         #############################################
 
         # Iterate the frames until the end of the waypoints is reached or
@@ -822,38 +772,31 @@ def exec_waypoint_nav_demo(args):
         prev_collision_vehicles    = 0
         prev_collision_pedestrians = 0
         prev_collision_other       = 0
+ 
+        prev_tl_state = None # previous state of the traffic light
 
-
-        prev_tl_state = None
-        tl_images = []
-        boxes_dict = {}
-        no_tl_state_counter = 0
-
+        ## ITERATE OVER FRAMES ##
         for frame in range(TOTAL_EPISODE_FRAMES):
             # Gather current data from the CARLA server
             measurement_data, sensor_data = client.read_data()
 
-            #visualize_sensor_data(sensor_data)
-
-            # UPDATE HERE the obstacles list
-            obstacles = []
-            intersections_location = []
+            obstacles = [] # lists containing the bounding boxes of the obstacles (pedestrian/vehicles) found on the lane
+            tl_locations = [] # lists containing the locations of the traffic lights in the scene
 
             # Update pose and timestamp
             prev_timestamp = current_timestamp
-            current_x, current_y, current_z, current_pitch, current_roll, current_yaw = \
-                get_current_pose(measurement_data)
+            current_x, current_y, current_z, current_pitch, current_roll, current_yaw = get_current_pose(measurement_data)
             current_speed = measurement_data.player_measurements.forward_speed
             current_timestamp = float(measurement_data.game_timestamp) / 1000.0
-
-            bp.set_emergency_distance(calc_distance(current_speed, 0, -A_MAX))
+            
+            #TODO: SERVE?
+            #bp.set_emergency_distance(calc_distance(current_speed, 0, -A_MAX))
 
             # Wait for some initial time before starting the demo
             if current_timestamp <= WAIT_TIME_BEFORE_START:
                 send_control_command(client, throttle=0.0, steer=0, brake=1.0)
                 continue
-            else:
-                current_timestamp = current_timestamp - WAIT_TIME_BEFORE_START
+            else: current_timestamp = current_timestamp - WAIT_TIME_BEFORE_START
             
             # Store history
             x_history.append(current_x)
@@ -872,7 +815,7 @@ def exec_waypoint_nav_demo(args):
                                                  prev_collision_other)
             collided_flag_history.append(collided_flag)
 
-            # Retrieve the sensors data in order to use them for the traffic light detection
+            ## RETRIEVE THE SENSORS DATA IN ORDER TO USE THEM FOR THE TRAFFIC LIGHT DETECTION ##
             front_camera_data = sensor_data.get('CameraRGB_Front', None)
             tl_camera_data = sensor_data.get('CameraRGB_TL', None)
 
@@ -891,58 +834,60 @@ def exec_waypoint_nav_demo(args):
             # to be operating at a frequency that is a division to the 
             # simulation frequency.
 
-            ## Obtain Lead Vehicle information. ##
-            temp = float('inf')
-            lead_car_pos    = None
-            lead_car_length = None
-            lead_car_speed  = None
+            ## ITERATES ALL THE AGENTS SPAWNED IN CARLA IN ORDER TO PROPERLY MANAGE THEM ##
 
-            list_norm = []
-            bp._obstacle_on_lane = False
-            bp.clear_ped_lists()
+            lead_car_pos    = None # location of the lead vehicle found
+            lead_car_speed  = None # speed of the lead vehicle found
+            
+            LEAD_X_DIST = float('inf') # distance on x-axis (m) used in order to evaluate if a possible lead vehicle is in front of us
+            LEAD_Y_DIST = 3 # distance on y-axis (m) used in order to evaluate if a possible lead car is in our lane
+            LEAD_MAX_YAW_DIFF=30 # angle difference (deg) in order to evaluate if a possible lead car has a similar orientation to ours
 
-            # Iterates all the agents spawned in Carla
+            #TODO: togliere?
+            #list_norm = []
+            #bp.clear_ped_lists() 
+
+            bp._obstacle_on_lane = False # flag used in the behavioural planner for identifying an agent that intercepts our trajectory
+
             for agent in measurement_data.non_player_agents:
-                agent_id = agent.id
+                # if the agent is a vehicle, check if it's a lead vehicle or an obstacle, otherwise don't care of it
                 if agent.HasField("vehicle"):
                     vehicle = agent.vehicle
                     transform = vehicle.transform
                     location = transform.location
                     rotation = transform.rotation
+                    
+                    #TODO: controllare se con la norma nel global frame cambia qualcosa o meno
                     # Retrieve the position of the vehicle in the vehicle frame
                     car_loc_relative = transform_world_to_ego_frame([location.x, location.y, location.z],
                                                                     [current_x, current_y, current_z],
                                                                     [current_roll, current_pitch, current_yaw])
-                    ## Decide if car is lead car ##
-                    # 0 < car_loc_relative[0] < temp => if we are approaching the lead vehicle
-                    # abs(car_loc_relative[1]) < 3 => if the lead vehicle is our lane
-                    # abs(sad(agent.vehicle.transform.rotation.yaw, np.rad2deg(current_yaw))) < 30 => 
+                    # Decide if car is lead car:
+                    # - 0 < car_loc_relative[0] < LEAD_X_DIST => if we are approaching the lead vehicle
+                    # - abs(car_loc_relative[1]) < LEAD_Y_DIST => if the lead vehicle is our lane
+                    # - abs(compute_angle_diff(agent.vehicle.transform.rotation.yaw, np.rad2deg(current_yaw))) < LEAD_MIN_YAW_DIFF => 
                     #               if the difference between ego and lead vehicle orientation is within 30 degrees
-                    if 0 < car_loc_relative[0] < temp and \
-                            abs(car_loc_relative[1]) < 3 and \
-                            abs(sad(agent.vehicle.transform.rotation.yaw, np.rad2deg(current_yaw))) < 30:
-                        temp = car_loc_relative[0]
+                    if 0 < car_loc_relative[0] < LEAD_X_DIST and abs(car_loc_relative[1]) < LEAD_Y_DIST and \
+                        abs(compute_angle_diff(agent.vehicle.transform.rotation.yaw, np.rad2deg(current_yaw))) < LEAD_MAX_YAW_DIFF:
+                        LEAD_X_DIST = car_loc_relative[0]
                         lead_car_pos = [agent.vehicle.transform.location.x, agent.vehicle.transform.location.y]
-                        lead_car_length = agent.vehicle.bounding_box.extent.x
                         lead_car_speed = agent.vehicle.forward_speed
-                        #print("Lead car pos: ",lead_car_pos)
-                        #print("Lead car speed: ", lead_car_speed,"\n")
+                    # else check if car is close (distance from us < 7 m) ...
                     else:
-                        norm = np.linalg.norm(car_loc_relative)
-
-                        if norm < LOOKAHEAD_VEHICLE:
-                            if check_obstacle_future_intersection(
-                                    vehicle,
+                        if np.linalg.norm(car_loc_relative) < LOOKAHEAD_VEHICLE:
+                            # ... for stopping if it intersects our trajectory ...
+                            if check_obstacle_future_intersection(vehicle,
                                     LOOKAHEAD_VEHICLE,
                                     car_loc_relative,
                                     [current_x, current_y, current_z],
                                     [current_roll, current_pitch, current_yaw]):
-
                                 print("VEHICLE -> OBSTACLE ON LANE")
                                 bp._obstacle_on_lane = True
                             else:
-                                obstacles.append(get_obstacle_box_points(location, vehicle.bounding_box.extent, rotation))
+                                # ... or it has to be managed as an obstacle
+                                obstacles.append(obstacle_to_world(location, vehicle.bounding_box.extent, rotation))
 
+                # if the agent is a pedestrian, check if it intersects our trajoectory or it's an obsatcle to be avoided
                 elif agent.HasField("pedestrian"):
                     pedestrian = agent.pedestrian
                     transform = pedestrian.transform
@@ -951,37 +896,32 @@ def exec_waypoint_nav_demo(args):
                     loc_relative = transform_world_to_ego_frame([location.x, location.y, location.z],
                                                                 [current_x, current_y, current_z],
                                                                 [current_roll, current_pitch, current_yaw])
-
-                    #list_norm.append(np.linalg.norm(loc_relative))
-                    #print("NORMA loc relative: ", np.linalg.norm(loc_relative))
-                    norm = np.linalg.norm(loc_relative)
-
-                    if norm > LOOKAHEAD_PEDESTRIAN:
-                        continue
-
-                    if check_obstacle_future_intersection(pedestrian,
-                                                          LOOKAHEAD_PEDESTRIAN,
-                                                          loc_relative,
-                                                          [current_x, current_y, current_z],
-                                                          [current_roll, current_pitch, current_yaw], 
-                                                          speed=10):
-
-                        print("PEDESTRIAN -> OBSTACLE ON LANE")
-                        bp._obstacle_on_lane = True
-                        #bp.set_pedestrian_loc(loc_relative, norm)
+                    # if distance from us is less than 7 m ...
+                    if np.linalg.norm(loc_relative) < LOOKAHEAD_PEDESTRIAN:
+                        # ... check if it intersects our trajectory for stopping
+                        if check_obstacle_future_intersection(pedestrian,
+                                    LOOKAHEAD_PEDESTRIAN,
+                                    loc_relative,
+                                    [current_x, current_y, current_z],
+                                    [current_roll, current_pitch, current_yaw], 
+                                    speed=10):
+                            print("PEDESTRIAN -> OBSTACLE ON LANE")
+                            bp._obstacle_on_lane = True
+                            # TODO: rimuovere?
+                            #bp.set_pedestrian_loc(loc_relative, norm)
 
                     else:
-                            # ...or add it as an obstacle
-                        obstacles.append(get_obstacle_box_points(location, pedestrian.bounding_box.extent, rotation))
+                        # ...or add it as an obstacle
+                        obstacles.append(obstacle_to_world(location, pedestrian.bounding_box.extent, rotation))
                 
+                # if the agent is a traffic light, get its location for deciding where to stop is nearest TL is red
                 elif agent.HasField('traffic_light'):
                     location = agent.traffic_light.transform.location
-                    intersections_location.append([location.x,location.y,location.z])
+                    tl_locations.append([location.x,location.y,location.z])
         
-
-            #######################################################
-
+            ## USE PLANNING MODULES EACH LP_FREQUENCY_DIVISOR FRAMES ##
             if frame % LP_FREQUENCY_DIVISOR == 0:
+                # predict traffic light state on each camera and draw boxes with results in order to display
                 boxes2 = detector.predict_image(tl_camera_data)
                 tl_camera_data = detector.draw_boxes(tl_camera_data, boxes2)
                 boxes1 = detector.predict_image(front_camera_data)
@@ -994,26 +934,30 @@ def exec_waypoint_nav_demo(args):
                     prev_tl_state = curr_light_state
                     print(f"Traffic Light: {curr_light_state.name}")
 
+                # set state of the nearest traffic light in the behavioural planner in order to be used in state computation
                 bp.set_lightstate(curr_light_state)
-                # Compute open loop speed estimate.
+                
+                # set traffic lights locations in the behavioural planner in order to be used in state computation
+                bp.set_intersection_goal(tl_locations)
+
+                # Compute open loop speed estimate
                 open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
 
-                bp.set_intersection_goal(intersections_location)
+                # Set lookahead distance based on current speed.
+                bp.set_lookahead(BP_LOOKAHEAD_BASE + BP_LOOKAHEAD_TIME * open_loop_speed)
 
                 # Calculate the goal state set in the local frame for the local planner.
                 # Current speed should be open loop for the velocity profile generation.
                 ego_state = [current_x, current_y, current_yaw, open_loop_speed]
 
-                # Set lookahead based on current speed.
-                bp.set_lookahead(BP_LOOKAHEAD_BASE + BP_LOOKAHEAD_TIME * open_loop_speed)
-
                 # Perform a state transition in the behavioural planner.
                 bp.transition_state(waypoints, ego_state, current_speed)
-
-                #print("Goal Index: ", bp._goal_index)
-
+                
+                # check for a lead vehicle
                 if lead_car_pos is not None:
                     bp.check_for_lead_vehicle(ego_state, lead_car_pos)
+                    if bp._follow_lead_vehicle:
+                        print(f"Lead vehicle to follow => pos: {lead_car_pos}, vel: {lead_car_speed}")
 
                 # Compute the goal state set from the behavioural planner's computed goal state.
                 goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
@@ -1040,11 +984,9 @@ def exec_waypoint_nav_demo(args):
                     # Compute the velocity profile for the path, and compute the waypoints.
                     desired_speed = bp._goal_state[2]
 
-                    if lead_car_pos is not None:
-                        lead_car_state = [lead_car_pos[0], lead_car_pos[1], lead_car_speed]
-
-                    else:
-                        lead_car_state = None
+                    # compute lead car state if present
+                    if lead_car_pos is not None: lead_car_state = [lead_car_pos[0], lead_car_pos[1], lead_car_speed]
+                    else: lead_car_state = None
 
                     decelerate_to_stop = bp._state == behavioural_planner.DECELERATE_TO_STOP
                     local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, lead_car_state, bp._follow_lead_vehicle, bp._obstacle_on_lane)
@@ -1089,9 +1031,7 @@ def exec_waypoint_nav_demo(args):
                         # Update the other controller values and controls
                         controller.update_waypoints(wp_interp)
 
-            ###
-            # Controller Update
-            ###
+            ## Controller Update ##
             if best_path is not None and local_waypoints is not None and local_waypoints != []:
                 controller.update_values(current_x, current_y, current_yaw, 
                                          current_speed,
@@ -1104,10 +1044,8 @@ def exec_waypoint_nav_demo(args):
                 cmd_brake = 0.0
 
             # Skip the first frame or if there exists no local paths
-            if skip_first_frame and frame == 0:
-                pass
-            elif local_waypoints == None:
-                pass
+            if skip_first_frame and frame == 0: pass
+            elif local_waypoints == None: pass
             else:
                 if ENABLE_LIVE_PLOT:
                     # Update live plotter with new feedback
@@ -1164,15 +1102,14 @@ def exec_waypoint_nav_demo(args):
                             wp_interp_np[path_indices.astype(int), 1],
                             new_colour=[1, 0.5, 0.0])
 
-
-                # Refresh the live plot based on the refresh rate 
-                # set by the options
+                # Refresh the live plot based on the refresh rate set by the options
                 if ENABLE_LIVE_PLOT and live_plot_timer.has_exceeded_lap_period():
                     lp_traj.refresh()
                     lp_1d.refresh()
                     live_plot_timer.lap()
 
-            # Output controller command to CARLA server
+            ## OUTPUT CONTROLLER COMMAND TO CARLA SERVER ##
+            # if there's an obstacle (pedestrian/vehicle) on the lane, perform an emergency brake (brake=1.0)
             send_control_command(client,
                                  throttle=cmd_throttle,
                                  steer=cmd_steer,
@@ -1184,11 +1121,8 @@ def exec_waypoint_nav_demo(args):
             dist_to_last_waypoint = np.linalg.norm(np.array([
                 waypoints[-1][0] - current_x,
                 waypoints[-1][1] - current_y]))
-            if  dist_to_last_waypoint < DIST_THRESHOLD_TO_LAST_WAYPOINT:
-                reached_the_end = True
-            if reached_the_end:
-                break
-
+            if dist_to_last_waypoint < DIST_THRESHOLD_TO_LAST_WAYPOINT: reached_the_end = True
+            if reached_the_end: break
 
         # End of demo - Stop vehicle and Store outputs to the controller output
         # directory.
@@ -1275,7 +1209,6 @@ def main():
             time.sleep(1)
 
 if __name__ == '__main__':
-
     try:
         main()
     except KeyboardInterrupt:

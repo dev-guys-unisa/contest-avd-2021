@@ -118,9 +118,7 @@ class TrafficLightDetector(YOLO):
         
         else:
             if round(light_accuracy1, 2) > self.MAX_TH1:
-                if light_state1 == light_state2:
-                    current_state = light_state2
-                else: current_state = light_state1
+                current_state = light_state1
             else:
                 current_state = TrafficLightState.NO_TL
 
