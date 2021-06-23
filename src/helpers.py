@@ -34,7 +34,6 @@ def calc_distance(v_i, v_f, a):
     returns:
         d: the final distance (m)
     """
-
     return (v_f * v_f - v_i * v_i) / 2 / a
 
 
@@ -205,6 +204,24 @@ def translate_position(entity, offset):
 
 
 def sad(a, b):
+    """
+    Given two angles returns the difference in the range [-180, 180]::
+
+    >>> d = b - a
+
+    Parameters
+    ----------
+    a : float
+        The first angle
+    b : float
+        The second angle
+
+    Return
+    ----------
+    d : float
+        The difference in the range [-180, 180]
+
+    """
     d = b - a
     if d > 180:
         d -= 360
@@ -214,16 +231,19 @@ def sad(a, b):
 
 
 def check_obstacle_future_intersection(entity, dist, loc_relative, ego, ego_rpy, speed=None):
+    """
+    Given the entity, the relative location and the ego_state checks for any intersections.
+    """
     # Check if entity's trajectory intersect ego's trajectory
     a = (0, 0)
     b = (dist,0)
     c = transform_world_to_ego_frame(
-        translate_position(entity,-5) if loc_relative[1]>0 else translate_position(entity,5),
+        translate_position(entity, -5),
         ego,
         ego_rpy
     )[:-1]
     d = transform_world_to_ego_frame(
-        estimate_next_entity_pos(entity, speed=speed),
+        estimate_next_entity_pos(entity, speed = speed),
         ego,
         ego_rpy
     )[:-1]

@@ -28,6 +28,7 @@ class VelocityPlanner:
             distance_step = np.linalg.norm(np.subtract(self._prev_trajectory[i+1][0:2], 
                                                        self._prev_trajectory[i][0:2]))
             velocity = self._prev_trajectory[i][2]
+            # Avoid divisions by zero
             time_delta = distance_step / (velocity + E)
            
             # If time_delta exceeds the remaining time in our simulation timestep, 
@@ -483,7 +484,7 @@ def calc_distance(v_i, v_f, a):
         d: the final distance (m)
     """
 
-    return (v_f*v_f-v_i*v_i)/2/a
+    return (v_f * v_f - v_i * v_i) / 2 / a
 
 # Using v_f = sqrt(v_i^2 + 2ad), compute the final speed for a given
 # acceleration across a given distance, with initial speed v_i.
@@ -502,7 +503,9 @@ def calc_final_speed(v_i, a, d):
     """
     pass
 
-    temp = v_i*v_i+2*d*a
-    if temp < 0: return 0.0000001
-    else: return sqrt(temp)
+    temp = v_i * v_i + 2 * d * a
+    if temp < 0: 
+        return 0.0000001
+    else: 
+        return sqrt(temp)
 

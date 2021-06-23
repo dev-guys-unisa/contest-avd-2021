@@ -20,6 +20,10 @@ class TrafficLightState(Enum):
 
 
 class TrafficLightDetector(YOLO):
+    """
+    This class allows to use the Traffic-Light-Detection module in order
+    to detect traffic lights in Carla.
+    """
     # Minimum threshold to refuse false positives
     MIN_TH = 0.1
     MAX_TH1 = 0.20
