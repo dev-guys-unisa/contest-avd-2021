@@ -24,7 +24,6 @@ from traffic_light_detector import TrafficLightDetector
 from traffic_light_detection_module.postprocessing import draw_boxes
 from utils import transform_world_to_ego_frame, compute_angle_diff, obstacle_to_world, check_obstacle_future_intersection
 
-
 # Script level imports
 sys.path.append(os.path.abspath(sys.path[0] + '/../..'))
 import live_plotter as lv   # Custom live plotting library
@@ -40,12 +39,12 @@ import carla.image_converter as image_converter
 
 
 ###############################################################################
-# CONFIGURABLE PARAMENTERS DURING EXAM
+# CONFIGURABLE PARAMETERS DURING EXAM
 ###############################################################################
 PLAYER_START_INDEX     = 15    # spawn index for player
 DESTINATION_INDEX      = 42    # Setting a Destination HERE
-NUM_PEDESTRIANS        = 300   # total number of pedestrians to spawn
-NUM_VEHICLES           = 100   # total number of vehicles to spawn
+NUM_PEDESTRIANS        = 0   # total number of pedestrians to spawn
+NUM_VEHICLES           = 0   # total number of vehicles to spawn
 SEED_PEDESTRIANS       = 0     # seed for pedestrian spawn randomizer
 SEED_VEHICLES          = 0     # seed for vehicle spawn randomizer
 ###############################################################################àà
@@ -111,6 +110,7 @@ LP_FREQUENCY_DIVISOR   = 2                # Frequency divisor to make the
                                           # frequency than the controller
                                           # (which operates at the simulation
                                           # frequency). Must be a natural number.
+
 DESIRED_SPEED          = 6                # maximum speed (m/s) to reach in straightforward paths
 TURN_SPEED             = 2.5              # maximum speed (m/s) to reach during turns
 
@@ -749,6 +749,9 @@ def exec_waypoint_nav_demo(args):
                                         A_MAX,
                                         SLOW_SPEED,
                                         STOP_LINE_BUFFER)
+        
+        LEAD_Y_DIST = 3 # distance on y-axis (m) used in order to evaluate if a possible lead car is in our lane
+        LEAD_MAX_YAW_DIFF = 30 # angle difference (deg) in order to evaluate if a possible lead car has a similar orientation to ours
         #TODO: terzo e quarto argomento del costruttore servono?
         bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE,
                                                     LEAD_VEHICLE_LOOKAHEAD, 
@@ -777,6 +780,7 @@ def exec_waypoint_nav_demo(args):
 
         ## ITERATE OVER FRAMES ##
         for frame in range(TOTAL_EPISODE_FRAMES):
+            print("\n-----FRAME ", frame, " -----")
             # Gather current data from the CARLA server
             measurement_data, sensor_data = client.read_data()
 
@@ -840,8 +844,6 @@ def exec_waypoint_nav_demo(args):
             lead_car_speed  = None # speed of the lead vehicle found
             
             LEAD_X_DIST = float('inf') # distance on x-axis (m) used in order to evaluate if a possible lead vehicle is in front of us
-            LEAD_Y_DIST = 3 # distance on y-axis (m) used in order to evaluate if a possible lead car is in our lane
-            LEAD_MAX_YAW_DIFF=30 # angle difference (deg) in order to evaluate if a possible lead car has a similar orientation to ours
 
             #TODO: togliere?
             #list_norm = []
@@ -943,12 +945,12 @@ def exec_waypoint_nav_demo(args):
                 # Compute open loop speed estimate
                 open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
 
-                # Set lookahead distance based on current speed.
-                bp.set_lookahead(BP_LOOKAHEAD_BASE + BP_LOOKAHEAD_TIME * open_loop_speed)
-
                 # Calculate the goal state set in the local frame for the local planner.
                 # Current speed should be open loop for the velocity profile generation.
                 ego_state = [current_x, current_y, current_yaw, open_loop_speed]
+
+                # Set lookahead distance based on current speed.
+                bp.set_lookahead(BP_LOOKAHEAD_BASE + BP_LOOKAHEAD_TIME * open_loop_speed)
 
                 # Perform a state transition in the behavioural planner.
                 bp.transition_state(waypoints, ego_state, current_speed)
@@ -956,8 +958,8 @@ def exec_waypoint_nav_demo(args):
                 # check for a lead vehicle
                 if lead_car_pos is not None:
                     bp.check_for_lead_vehicle(ego_state, lead_car_pos)
-                    if bp._follow_lead_vehicle:
-                        print(f"Lead vehicle to follow => pos: {lead_car_pos}, vel: {lead_car_speed}")
+                    # if bp._follow_lead_vehicle:
+                    #     print(f"Lead vehicle to follow => pos: {lead_car_pos}, vel: {lead_car_speed}")
 
                 # Compute the goal state set from the behavioural planner's computed goal state.
                 goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
@@ -1108,7 +1110,7 @@ def exec_waypoint_nav_demo(args):
                     lp_1d.refresh()
                     live_plot_timer.lap()
 
-            ## OUTPUT CONTROLLER COMMAND TO CARLA SERVER ##
+            ## OUTPUT CONTROLLER COMMANDS TO CARLA SERVER ##
             # if there's an obstacle (pedestrian/vehicle) on the lane, perform an emergency brake (brake=1.0)
             send_control_command(client,
                                  throttle=cmd_throttle,
@@ -1123,6 +1125,7 @@ def exec_waypoint_nav_demo(args):
                 waypoints[-1][1] - current_y]))
             if dist_to_last_waypoint < DIST_THRESHOLD_TO_LAST_WAYPOINT: reached_the_end = True
             if reached_the_end: break
+            print ("-------------------")
 
         # End of demo - Stop vehicle and Store outputs to the controller output
         # directory.

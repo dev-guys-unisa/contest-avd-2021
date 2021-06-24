@@ -109,7 +109,7 @@ def translate_position(entity, offset):
 
     Args:
         entity: Carla agent for which next position has to be translated
-        offset ([int]):  offset on the x-axis of which translate the entity
+        offset (float):  offset on the x-axis of which translate the entity
 
     Returns:
         [x,y,z]: translated position of the entity
@@ -121,7 +121,7 @@ def estimate_next_entity_pos(entity, speed=None):
 
     Args:
         entity: Carla agent for which next position has to be estimated
-        speed (int, optional): speed to be used for estimation. Defaults to None, that is current speed of the entity.
+        speed (float, optional): speed to be used for estimation. Defaults to None, that is current speed of the entity.
 
     Returns:
         [x,y,z]: estimated next position of the entity
