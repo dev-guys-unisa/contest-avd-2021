@@ -47,7 +47,7 @@ NUM_PEDESTRIANS        = 300   # total number of pedestrians to spawn
 NUM_VEHICLES           = 100   # total number of vehicles to spawn
 SEED_PEDESTRIANS       = 0     # seed for pedestrian spawn randomizer
 SEED_VEHICLES          = 0     # seed for vehicle spawn randomizer
-###############################################################################àà
+###############################################################################
 
 ###############################################################################
 # DECLARATION OF USEFUL CONSTANTS
@@ -755,8 +755,7 @@ def exec_waypoint_nav_demo(args):
         #TODO: terzo e quarto argomento del costruttore servono?
         bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE,
                                                     LEAD_VEHICLE_LOOKAHEAD, 
-                                                    [], 
-                                                    A_MAX)
+                                                    [])
 
         #############################################
         # SCENARIO EXECUTION LOOP
@@ -845,10 +844,6 @@ def exec_waypoint_nav_demo(args):
             
             LEAD_X_DIST = float('inf') # distance on x-axis (m) used in order to evaluate if a possible lead vehicle is in front of us
 
-            #TODO: togliere?
-            #list_norm = []
-            #bp.clear_ped_lists() 
-
             bp._obstacle_on_lane = False # flag used in the behavioural planner for identifying an agent that intercepts our trajectory
 
             for agent in measurement_data.non_player_agents:
@@ -915,7 +910,7 @@ def exec_waypoint_nav_demo(args):
                             # ...or add it as an obstacle
                             obstacles.append(obstacle_to_world(location, pedestrian.bounding_box.extent, rotation))
                 
-                # if the agent is a traffic light, get its location for deciding where to stop is nearest TL is red
+                # if the agent is a traffic light, get its location for deciding where to stop if nearest TL is red
                 elif agent.HasField('traffic_light'):
                     location = agent.traffic_light.transform.location
                     tl_locations.append([location.x,location.y,location.z])
@@ -939,7 +934,7 @@ def exec_waypoint_nav_demo(args):
                 bp.set_lightstate(curr_light_state)
                 
                 # set traffic lights locations in the behavioural planner in order to be used in state computation
-                bp.set_intersection_goal(tl_locations)
+                bp.set_tl_locations(tl_locations)
 
                 # Compute open loop speed estimate
                 open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
@@ -989,7 +984,7 @@ def exec_waypoint_nav_demo(args):
                     if lead_car_pos is not None: lead_car_state = [lead_car_pos[0], lead_car_pos[1], lead_car_speed]
                     else: lead_car_state = None
 
-                    decelerate_to_stop = bp._state == behavioural_planner.DECELERATE_TO_STOP
+                    decelerate_to_stop = bp._state == behavioural_planner.FSMState.DECELERATE_TO_STOP
                     local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, lead_car_state, bp._follow_lead_vehicle, bp._obstacle_on_lane)
 
                     if local_waypoints != None:

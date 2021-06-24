@@ -2,7 +2,7 @@
 import numpy as np
 from math import sin, cos, pi, sqrt
 
-E = 10**(-7)
+E = 10**(-7) # constant for avoiding a division by zero in computing the speed
 
 class VelocityPlanner:
     def __init__(self, time_gap, a_max, slow_speed, stop_line_buffer):
@@ -116,9 +116,12 @@ class VelocityPlanner:
         # For our profile, use the open loop speed as our initial speed.
         start_speed = ego_state[3]
         # Generate a trapezoidal profile to decelerate to stop.
+
+        # if we need to decelerate for a red traffic light but we have to follow a lead vehicle
         if decelerate_to_stop and lead_car_state is not None and follow_lead_vehicle:
             profile = self.follow_profile(path, start_speed, 0,lead_car_state)
-            
+
+        # if we need only to decelerate for a red traffic light
         elif decelerate_to_stop:
             profile = self.decelerate_profile(path, start_speed)
 
@@ -128,13 +131,11 @@ class VelocityPlanner:
             profile = self.follow_profile(path, start_speed, desired_speed, 
                                           lead_car_state)
 
-        # Otherwise, compute the profile to reach our desired speed.
+        # if there's an obstacle on our trajectory, speed profile for reaching 0 m/s
         elif obstacle_on_lane:
-            print("Ostacolo: decelero")
             profile = self.nominal_profile(path, start_speed, 0)
-            #profile = self.decelerate_profile(path,start_speed)
 
-        else:
+        else:  # Otherwise, compute the profile to reach our desired speed.
             profile = self.nominal_profile(path, start_speed, desired_speed)
 
         # Interpolate between the zeroth state and the first state.
