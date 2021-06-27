@@ -20,6 +20,21 @@ def rotate_z(angle):
                  [         0,          0, 1 ]])
     return R
 
+def to_rot(r):
+    Rx = np.mat([[ 1,         0,           0],
+                 [ 0, cos(r[0]), -sin(r[0]) ],
+                 [ 0, sin(r[0]),  cos(r[0]) ]])
+
+    Ry = np.mat([[ cos(r[1]), 0,  sin(r[1]) ],
+                 [ 0,         1,          0 ],
+                 [-sin(r[1]), 0,  cos(r[1]) ]])
+
+    Rz = np.mat([[ cos(r[2]), -sin(r[2]), 0 ],
+                 [ sin(r[2]),  cos(r[2]), 0 ],
+                 [         0,          0, 1 ]])
+
+    return Rz*Ry*Rx
+
 # Transform the obstacle with its boundary point in the global frame
 def obstacle_to_world(location, dimensions, orientation):
     box_pts = []

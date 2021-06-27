@@ -51,6 +51,9 @@ class TrafficLightDetector(YOLO):
         self._state = None      # last stable traffic light state
         self._new_state = None # current traffic light state
 
+        self._current_boxes = [] # [box1, box2]
+        self._current_box = None # {nomeCamera: box}
+
     def get_state(self):
         return self._state
 
@@ -112,10 +115,14 @@ class TrafficLightDetector(YOLO):
         boxes_ = list(filter(lambda b: b.get_score() > TrafficLightDetector.MIN_TH, boxes))
 
         # if no boxes are found, we haven't a traffic light
-        if len(boxes_) == 0: return TrafficLightState.NO_TL, 0
+        if len(boxes_) == 0: 
+            self._current_boxes.append([])
+            return TrafficLightState.NO_TL, 0
 
         # Heuristic: get the boxes with greater area, aka the prediction of the nearest traffic ligth
         box = sorted(boxes_, key=lambda b: b.get_area(), reverse=True)[0]
+
+        self._current_boxes.append(box)
 
         # return GO or STOP state with relative accuracy
         if box.get_label() == TrafficLightState.GO.value: return TrafficLightState.GO, box.get_score()
@@ -143,11 +150,16 @@ class TrafficLightDetector(YOLO):
         # to NO_TL because detector accuracy is too low.
         if round(light_accuracy2, 2) > self.MAX_TH2:
             current_state = light_state2
+            current_box = {"CameraDEPTH_TL": self._current_boxes[1]}
         else:
             if round(light_accuracy1, 2) > self.MAX_TH1:
                 current_state = light_state1
+                current_box = {"CameraDEPTH_FRONT": self._current_boxes[0]}
             else:
                 current_state = TrafficLightState.NO_TL
+                current_box = None
+
+        self._current_boxes.clear()
 
         # first initialization
         if self._state is None:
@@ -172,8 +184,11 @@ class TrafficLightDetector(YOLO):
         elif ((self._new_state == TrafficLightState.NO_TL and self._state_counter >= self.MIN_NOTL_FRAMES) or
               (self._new_state == TrafficLightState.GO and self._state_counter >= self.MIN_GO_FRAMES) or
               (self._new_state == TrafficLightState.STOP and self._state_counter >= self.MIN_STOP_FRAMES)):
+            print("Stato ", self._new_state, " stabile")
             self._state = self._new_state
             self._state_counter = 0
             self._indecision_counter = 0
+
+            self._current_box = current_box
 
         return self.get_state()

@@ -41,12 +41,12 @@ import carla.image_converter as image_converter
 ###############################################################################
 # CONFIGURABLE PARAMETERS DURING EXAM
 ###############################################################################
-PLAYER_START_INDEX     = 15    # spawn index for player
-DESTINATION_INDEX      = 42    # Setting a Destination HERE
-NUM_PEDESTRIANS        = 300   # total number of pedestrians to spawn
-NUM_VEHICLES           = 100   # total number of vehicles to spawn
-SEED_PEDESTRIANS       = 0     # seed for pedestrian spawn randomizer
-SEED_VEHICLES          = 0     # seed for vehicle spawn randomizer
+PLAYER_START_INDEX     = 16    # spawn index for player
+DESTINATION_INDEX      = 106    # Setting a Destination HERE
+NUM_PEDESTRIANS        = 50   # total number of pedestrians to spawn
+NUM_VEHICLES           = 30   # total number of vehicles to spawn
+SEED_PEDESTRIANS       = 0    # seed for pedestrian spawn randomizer
+SEED_VEHICLES          = 0    # seed for vehicle spawn randomizer
 ###############################################################################
 
 ###############################################################################
@@ -90,8 +90,8 @@ DIST_THRESHOLD_TO_LAST_WAYPOINT = 2.0  # some distance from last position before
                                        # simulation ends
 
 # Planning Constants
-LOOKAHEAD_PEDESTRIAN    = 7 # distance (m) within check if there is some pedestrians to be avoided during the path
-LOOKAHEAD_VEHICLE       = 7 # distance (m) within check if there is some vehicles to be avoided during the path 
+LOOKAHEAD_PEDESTRIAN    = 10 # distance (m) within check if there is some pedestrians to be avoided during the path
+LOOKAHEAD_VEHICLE       = 10 # distance (m) within check if there is some vehicles to be avoided during the path 
 
 NUM_PATHS = 7
 BP_LOOKAHEAD_BASE      = 16.0              # m
@@ -172,6 +172,26 @@ def make_carla_settings(args):
     camera2_pitch = cams_config['cam_tl']['orientation'][1]
     camera2_yaw = cams_config['cam_tl']['orientation'][2]
 
+    camera3_x_pos = cams_config['cam_depth_TL']['position'][0]
+    camera3_y_pos = cams_config['cam_depth_TL']['position'][1]
+    camera3_z_pos = cams_config['cam_depth_TL']['position'][2] 
+    camera3_width = cams_config['cam_depth_TL']['img_size'][0]
+    camera3_height = cams_config['cam_depth_TL']['img_size'][1]
+    camera3_fov = cams_config['cam_depth_TL']['field_of_view']
+    camera3_roll = cams_config['cam_depth_TL']['orientation'][0]
+    camera3_pitch = cams_config['cam_depth_TL']['orientation'][1]
+    camera3_yaw = cams_config['cam_depth_TL']['orientation'][2]
+
+    camera4_x_pos = cams_config['cam_depth_front']['position'][0]
+    camera4_y_pos = cams_config['cam_depth_front']['position'][1]
+    camera4_z_pos = cams_config['cam_depth_front']['position'][2] 
+    camera4_width = cams_config['cam_depth_front']['img_size'][0]
+    camera4_height = cams_config['cam_depth_front']['img_size'][1]
+    camera4_fov = cams_config['cam_depth_front']['field_of_view']
+    camera4_roll = cams_config['cam_depth_front']['orientation'][0]
+    camera4_pitch = cams_config['cam_depth_front']['orientation'][1]
+    camera4_yaw = cams_config['cam_depth_front']['orientation'][2]
+
     #############################################
     # SENSORS DECLARATION
     #############################################
@@ -189,9 +209,25 @@ def make_carla_settings(args):
     camera1.set(FOV = camera2_fov)
     camera1.set_position(camera2_x_pos, camera2_y_pos, camera2_z_pos)
     camera1.set_rotation(camera2_pitch, camera2_yaw, camera2_roll)
+    
+    # DEPTH Camera for Traffic Light Detection
+    camera2 = Camera("CameraDEPTH_TL", PostProcessing='Depth')
+    camera2.set_image_size(camera3_width, camera3_height)
+    camera2.set(FOV = camera3_fov)
+    camera2.set_position(camera3_x_pos, camera3_y_pos, camera3_z_pos)
+    camera2.set_rotation(camera3_pitch, camera3_yaw, camera3_roll)
+
+    # DEPTH Camera for front
+    camera3 = Camera("CameraDEPTH_FRONT", PostProcessing='Depth')
+    camera3.set_image_size(camera4_width, camera4_height)
+    camera3.set(FOV = camera4_fov)
+    camera3.set_position(camera4_x_pos, camera4_y_pos, camera4_z_pos)
+    camera3.set_rotation(camera4_pitch, camera4_yaw, camera4_roll)
 
     settings.add_sensor(camera0)
     settings.add_sensor(camera1)
+    settings.add_sensor(camera2)
+    settings.add_sensor(camera3)
     ######################################  
 
     return settings
@@ -388,6 +424,18 @@ def exec_waypoint_nav_demo(args):
         print('Carla client connected.')
 
         settings = make_carla_settings(args)
+
+        # recover depth camera informations
+        depth_info = {"CameraDEPTH_TL":{}, "CameraDEPTH_FRONT":{}}
+        for s in settings._sensors:
+            if s.SensorName=="CameraDEPTH_TL":
+                depth_info["CameraDEPTH_TL"] = \
+                            {"w":s.ImageSizeX, "h": s.ImageSizeY, "fov": s.FOV, "x": s.PositionX, "y": s.PositionY,
+                             "z": s.PositionZ, "roll": s.RotationRoll, "pitch": s.RotationPitch, "yaw": s.RotationYaw}
+            elif s.SensorName=="CameraDEPTH_FRONT":
+                depth_info["CameraDEPTH_FRONT"] = \
+                            {"w":s.ImageSizeX, "h": s.ImageSizeY, "fov": s.FOV, "x": s.PositionX, "y": s.PositionY,
+                             "z": s.PositionZ, "roll": s.RotationRoll, "pitch": s.RotationPitch, "yaw": s.RotationYaw}
 
         # Now we load these settings into the server. The server replies
         # with a scene description containing the available start spots for
@@ -779,7 +827,7 @@ def exec_waypoint_nav_demo(args):
 
         ## ITERATE OVER FRAMES ##
         for frame in range(TOTAL_EPISODE_FRAMES):
-            print("\n-----FRAME ", frame, " -----")
+            #print("\n-----FRAME ", frame, " -----")
             # Gather current data from the CARLA server
             measurement_data, sensor_data = client.read_data()
 
@@ -821,6 +869,8 @@ def exec_waypoint_nav_demo(args):
             ## RETRIEVE THE SENSORS DATA IN ORDER TO USE THEM FOR THE TRAFFIC LIGHT DETECTION ##
             front_camera_data = sensor_data.get('CameraRGB_Front', None)
             tl_camera_data = sensor_data.get('CameraRGB_TL', None)
+            depth_camera_data = sensor_data.get('CameraDEPTH_TL', None)
+            depth_camera_data_front = sensor_data.get('CameraDEPTH_FRONT', None)
 
             if front_camera_data is not None:
                 front_camera_data = to_bgra_array(front_camera_data)
@@ -828,6 +878,12 @@ def exec_waypoint_nav_demo(args):
             if tl_camera_data is not None:
                 tl_camera_data = to_bgra_array(tl_camera_data)
 
+            if depth_camera_data is not None:
+                depth_camera_data = image_converter.depth_to_array(depth_camera_data)
+
+            if depth_camera_data_front is not None:
+                depth_camera_data_front = image_converter.depth_to_array(depth_camera_data_front)
+            
             # Execute the behaviour and local planning in the current instance
             # Note that updating the local path during every controller update
             # produces issues with the tracking performance (imagine everytime
@@ -878,7 +934,7 @@ def exec_waypoint_nav_demo(args):
                                     car_loc_relative,
                                     [current_x, current_y, current_z],
                                     [current_roll, current_pitch, current_yaw]):
-                                print("VEHICLE -> OBSTACLE ON LANE")
+                                #print("VEHICLE -> OBSTACLE ON LANE")
                                 bp._obstacle_on_lane = True
                             else:
                                 # ... or it has to be managed as an obstacle
@@ -902,7 +958,7 @@ def exec_waypoint_nav_demo(args):
                                     [current_x, current_y, current_z],
                                     [current_roll, current_pitch, current_yaw], 
                                     speed=10):
-                            print("PEDESTRIAN -> OBSTACLE ON LANE")
+                            #print("PEDESTRIAN -> OBSTACLE ON LANE")
                             bp._obstacle_on_lane = True
                             # TODO: rimuovere?
                             #bp.set_pedestrian_loc(loc_relative, norm)
@@ -922,19 +978,27 @@ def exec_waypoint_nav_demo(args):
                 tl_camera_data = detector.draw_boxes(tl_camera_data, boxes2)
                 boxes1 = detector.predict_image(front_camera_data)
                 front_camera_data = detector.draw_boxes(front_camera_data, boxes1)
-                cv2.imshow("Front Cameras", np.hstack((front_camera_data, tl_camera_data)))
+                cv2.imshow("Cameras", np.hstack((front_camera_data, tl_camera_data)))
+                #cv2.imshow("Depth Camera", depth_camera_data)
                 cv2.waitKey(1)
+
+                bp.set_depth_img({"CameraDEPTH_TL":depth_camera_data, "CameraDEPTH_FRONT":depth_camera_data_front})
+                bp.set_current_box(detector._current_box)
+                bp.set_camera_params(depth_info)
 
                 curr_light_state = detector.update_state(boxes1, boxes2)
                 if prev_tl_state != curr_light_state:
                     prev_tl_state = curr_light_state
                     print(f"Traffic Light: {curr_light_state.name}")
 
+                # if curr_center_boxes is not None:
+                #     tl_distance = depth_camera_data[curr_center_boxes[1]][curr_center_boxes[0]]*1000 #normalized distance from TL [0,1]
+                #     print("TL POS: ", curr_center_boxes, " - TL Distance: ", tl_distance)
+                #     # set traffic lights locations in the behavioural planner in order to be used in state computation
+                #     bp.set_tl_locations(tl_distance)
+                
                 # set state of the nearest traffic light in the behavioural planner in order to be used in state computation
                 bp.set_lightstate(curr_light_state)
-                
-                # set traffic lights locations in the behavioural planner in order to be used in state computation
-                bp.set_tl_locations(tl_locations)
 
                 # Compute open loop speed estimate
                 open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
@@ -984,7 +1048,7 @@ def exec_waypoint_nav_demo(args):
                     if lead_car_pos is not None: lead_car_state = [lead_car_pos[0], lead_car_pos[1], lead_car_speed]
                     else: lead_car_state = None
 
-                    decelerate_to_stop = bp._state == behavioural_planner.FSMState.DECELERATE_TO_STOP
+                    decelerate_to_stop = bp._state == behavioural_planner.FSMState.DECELERATE_AND_STOP
                     local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, lead_car_state, bp._follow_lead_vehicle, bp._obstacle_on_lane)
 
                     if local_waypoints != None:
@@ -1119,7 +1183,7 @@ def exec_waypoint_nav_demo(args):
                 waypoints[-1][1] - current_y]))
             if dist_to_last_waypoint < DIST_THRESHOLD_TO_LAST_WAYPOINT: reached_the_end = True
             if reached_the_end: break
-            print ("-------------------")
+            #print ("-------------------")
 
         # End of demo - Stop vehicle and Store outputs to the controller output
         # directory.
@@ -1204,10 +1268,13 @@ def main():
         except TCPConnectionError as error:
             logging.error(error)
             time.sleep(1)
-
+# import wmi
 if __name__ == '__main__':
     try:
         main()
+        # for process in wmi.WMI().Win32_Process():
+        #     if process.name == "CarlaUE4.exe":
+        #         process.Terminate()
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')
 

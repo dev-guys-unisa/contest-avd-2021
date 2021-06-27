@@ -2,7 +2,7 @@
 import numpy as np
 import math
 from traffic_light_detector import TrafficLightState
-from utils import transform_world_to_ego_frame
+from utils import transform_world_to_ego_frame, to_rot, rotate_z, rotate_x
 from enum import Enum
 
 ###############################################################################
@@ -10,15 +10,15 @@ from enum import Enum
 ###############################################################################
 class FSMState(Enum):
     FOLLOW_LANE = 0
-    DECELERATE_TO_STOP = 1
+    DECELERATE_AND_STOP = 1
     STOP_FOR_OBSTACLES = 2
 
 ###############################################################################
 # DECLARATION OF USEFUL CONSTANTS
 ###############################################################################
 DIST_TO_TL = 15 # distance (m) for evaluating nearest traffic light to stop at 
-DIST_STOP_TL = 5 # minimum distance (m) from the traffic light to which we want to stop for a RED light
-TL_Y_POS = 3 # distance (m) on the Y axis for the traffic light check.
+DIST_STOP_TL = 3.5 # minimum distance (m) from the traffic light to which we want to stop for a RED light
+TL_Y_POS = 3.5 # distance (m) on the Y axis for the traffic light check.
 DIST_TO_PEDESTRIAN = 3 # distance (m) from the nearest pedestrian within we have to stop
 
 ###############################################################################
@@ -37,13 +37,49 @@ class BehaviouralPlanner:
 
         self._tl_locations                  = intersection # TODO: inizializzare direttamente a lista vuota
         self._emergency_distance            = 0 #TODO: serve?
+
+        self._depth_image                   = None # images of depth cameras {nomeCamera:image}
+        self._current_box                   = None # current detected traffic light box
+        self._camera_params                 = {} # parameters of depth camera used in camera projection geometry {name:params}
+        self._inv_intrinsic_matrix          = {"CameraDEPTH_TL":None, "CameraDEPTH_FRONT":None} # inverse of intrinsic matrix used in camera projection geometry
+
+        # Rotation matrix to align image frame to camera frame
+        rotation_image_camera_frame = np.dot(rotate_z(-90 * math.pi /180),rotate_x(-90 * math.pi /180))
+
+        image_camera_frame = np.zeros((4,4))
+        image_camera_frame[:3,:3] = rotation_image_camera_frame
+        image_camera_frame[:, -1] = [0, 0, 0, 1]
+
+        # Lambda Function for transformation of image frame in camera frame 
+        self._image_to_camera_frame = lambda object_camera_frame: np.dot(image_camera_frame, object_camera_frame)
     
     def set_lookahead(self, lookahead):
         self._lookahead = lookahead
 
     def set_lightstate(self, lighstate):
         self._lightstate = lighstate
+
+    def set_depth_img(self, depth_img):
+        self._depth_image = depth_img
     
+    def set_current_box(self, box):
+        self._current_box = box
+    
+    def set_camera_params(self, depth_info):
+        self._camera_params = depth_info
+
+        for k in list(depth_info.keys()):
+            # Calculate Inverse Intrinsic Matrix for both depth cameras
+            f = self._camera_params[k]["w"] /(2 * math.tan(self._camera_params[k]["fov"] * math.pi / 360))
+            Center_X = self._camera_params[k]["w"] / 2.0
+            Center_Y = self._camera_params[k]["h"] / 2.0
+
+            intrinsic_matrix = np.array([[f, 0, Center_X],
+                                        [0, f, Center_Y],
+                                        [0, 0, 1]])
+
+            self._inv_intrinsic_matrix[k]=np.linalg.inv(intrinsic_matrix)
+
     #TODO: serve?
     def set_emergency_distance(self, emergency_distance):
         self._emergency_distance = emergency_distance
@@ -55,7 +91,7 @@ class BehaviouralPlanner:
         """
         Checks whether the vehicle is near a traffic light and returns a waypoint index near to it or 
         None if no waypoints are found. The check is done 15 meters from the traffic light. 
-        If so, the one that is located at least 5 meters from the intersection is chosen as the target waypoint
+        If so, the one that is located at most 5 meters from the intersection is chosen as the target waypoint
         so it is possible to stop at an acceptable distance.
 
         Args:
@@ -67,32 +103,102 @@ class BehaviouralPlanner:
         Returns:
             [int]: index of the waypoint target
         """
+        
+        # recover estimated TL location
+        tl_pos = self.get_tl_pos()
 
-        # For each waypoint from the closest to the goal we want to check if there is a traffic light that we have to manage
-        for i in range(closest_index, goal_index):
-            for inter in self._tl_locations:
-                inter_loc_relative = transform_world_to_ego_frame(
-                    [inter[0], inter[1], inter[2]],
+        if tl_pos is not None:
+            tl_pos = tl_pos[0]
+            # For each waypoint from the closest to the goal we want to check if there is a traffic light that we have to manage
+            for i in range(closest_index, goal_index):
+                waypoint_loc_relative = transform_world_to_ego_frame(
+                    [waypoints[i][0], waypoints[i][1], 0],
                     [ego_state[0], ego_state[1], 0.0],
                     [0.0, 0.0, ego_state[2]]
                 )
                 # We calculate the distance between the current waypoint and the current traffic light
-                dist_spot = np.linalg.norm(np.array([waypoints[i][0] - inter[0], waypoints[i][1] - inter[1]]))
+                dist_spot = np.linalg.norm(np.array([waypoint_loc_relative[0] - tl_pos[0], waypoint_loc_relative[1] - tl_pos[1]]))
                 # If this distance is smaller than DIST_TO_TL, we spot the traffic light
                 if dist_spot < DIST_TO_TL:
                     # But we also check if it is ahead of ego or behind. If ahead, we choose a stop waypoint.
-                    if inter_loc_relative[0] > 0 and -TL_Y_POS <= inter_loc_relative[1] <= TL_Y_POS:
-                        print(f"TL ahead. Position: {inter_loc_relative}")
+                    if tl_pos[0] > 0 and tl_pos[1] <= TL_Y_POS:
+                        print(f"TL ahead. Position: {tl_pos}")
                         for j in range(i, len(waypoints)):
-                            if np.linalg.norm(np.array([waypoints[j][0] - inter[0], waypoints[j][1] - inter[1]])) < DIST_STOP_TL:
-                                print(f"TL Stop Waypoint: {j - 1} {waypoints[j - 1]}")
-                                return j - 1
+                            waypoint_loc_relative = transform_world_to_ego_frame(
+                                [waypoints[j][0], waypoints[j][1], waypoints[j][2]],
+                                [ego_state[0], ego_state[1], 0.0],
+                                [0.0, 0.0, ego_state[2]]
+                            )
+                            if np.linalg.norm(np.array([waypoint_loc_relative[0] - tl_pos[0], waypoint_loc_relative[1] - tl_pos[1]])) < DIST_STOP_TL:
+                                print(f"TL Stop Waypoint: {j} {waypoints[j]}")
+                                return j
                     # Otherwise we stop checking.
                     else:
-                        print(f"TL behind, ignored. Position: {inter_loc_relative}")
+                        print(f"TL behind, ignored. Position: {tl_pos}")
                         return None
         return None
 
+    def get_tl_pos(self):
+        if self._current_box is None: return None # NO_TL
+
+        cam_name = list(self._current_box.keys())[0]
+        box = list(self._current_box.values())[0]
+        depth_image = self._depth_image[cam_name]
+        inv_intrinsic_matrix = self._inv_intrinsic_matrix[cam_name]
+        camera_params = self._camera_params[cam_name]
+        
+        xmin, ymin, xmax, ymax = box.get_bounds()
+        xmin = xmin*400
+        xmax = xmax*400
+        ymin = ymin*400
+        ymax = ymax*400
+
+        # recover distance and pixel position of the TL
+        depth = 1000 #Distance of the sky
+        for i in range(int(xmin), int(xmax+1)):
+            for j in range(int(ymin), int(ymax+1)):
+                if j < 400 and i < 400:
+                    if depth > depth_image[j][i]:
+                        y = j
+                        x = i
+                        depth = depth_image[y][x]
+        
+        #print("DEPTH: ", depth*1000)
+
+        pixel = [x, y, 1]
+        pixel = np.reshape(pixel, (3,1))
+        
+        depth = depth_image[y][x] * 1000  # Consider depth in meters  
+
+        if depth!=1000:
+            # Projection Pixel to Image Frame
+            image_frame_vect = np.dot(inv_intrinsic_matrix,pixel) * depth
+
+            # Create extended vector
+            image_frame_vect_extended = np.zeros((4,1))
+            image_frame_vect_extended[:3] = image_frame_vect 
+            image_frame_vect_extended[-1] = 1
+
+            # Projection Camera to Vehicle Frame
+            camera_frame = self._image_to_camera_frame(image_frame_vect_extended)
+            camera_frame = camera_frame[:3]
+            camera_frame = np.asarray(np.reshape(camera_frame, (1,3)))
+
+            camera_frame_extended = np.zeros((4,1))
+            camera_frame_extended[:3] = camera_frame.T 
+            camera_frame_extended[-1] = 1
+
+            camera_to_vehicle_frame = np.zeros((4,4))
+            camera_to_vehicle_frame[:3,:3] = to_rot([camera_params["pitch"], camera_params["yaw"], camera_params["roll"]])
+            camera_to_vehicle_frame[:,-1] = [camera_params["x"], camera_params["y"], camera_params["h"], 1]
+
+            vehicle_frame = np.dot(camera_to_vehicle_frame, camera_frame_extended)
+            vehicle_frame = vehicle_frame[:3]
+            vehicle_frame = np.asarray(np.reshape(vehicle_frame, (1,3)))
+
+            return vehicle_frame
+        else: return None
+    
     def get_new_goal(self, waypoints, ego_state):
         """this function computes the next goal waypoint, based on current state of the vehicle
 
@@ -158,7 +264,7 @@ class BehaviouralPlanner:
             self._state: The current state of the vehicle.
                 available states: 
                     FOLLOW_LANE         : Follow the global waypoints (lane).
-                    DECELERATE_TO_STOP  : Decelerate to stop.
+                    DECELERATE_AND_STOP  : Decelerate to stop.
                     STOP_FOR_OBSTACLES  : Stay stopped until there's an obstacle on the lane.
         """
         # In this state, continue tracking the lane by finding the
@@ -168,44 +274,48 @@ class BehaviouralPlanner:
         # Otherwise check if there's a red traffic light; If it does, then ensure
         # that the goal state enforces the car to be stopped 5 m before the traffic light.
         if self._state == FSMState.FOLLOW_LANE:
-            print("State: FOLLOW_LANE")
+            #print("State: FOLLOW_LANE")
 
             closest_index,goal_index = self.get_new_goal(waypoints, ego_state)
 
             # if there's an agent that intersects our trajectory, stop immediately 
             if self._obstacle_on_lane:
                 self.update_goal(waypoints, goal_index, 0)
+                print("State: FOLLOW_LANE -> STOP_FOR_OBSTACLES")
                 self._state = FSMState.STOP_FOR_OBSTACLES
 
             else:
                 intersection_goal = None
                 # if there's a red traffic light, get the waypoint at 5 m from it
                 if self._lightstate == TrafficLightState.STOP:
-                    print("FOLLOW_LANE -> DECEL AND STOP")
                     intersection_goal = self.get_tl_stop_goal(waypoints, ego_state, closest_index, goal_index)
                 
                 if intersection_goal is not None:
                     self.update_goal(waypoints, intersection_goal, 0)
-                    self._state = FSMState.DECELERATE_TO_STOP
+                    print("State: FOLLOW_LANE -> DECEL_AND_STOP")
+                    self._state = FSMState.DECELERATE_AND_STOP
                 else:
                     self.update_goal(waypoints, goal_index)
                 
         # In this state, check if there's an agent that intersects our trajectory for stopping immediately;
         # otherwise, check if the traffic light has becomed green or is disappeared from our vision for passing in follow lane.
         # (the second case is not real but we take care of it for avoiding to remain blocked at traffic light)
-        elif self._state == FSMState.DECELERATE_TO_STOP:
-            print("State: DECELERATE_AND_STOP")
+        elif self._state == FSMState.DECELERATE_AND_STOP:
+            #print("State: DECELERATE_AND_STOP")
 
             if self._obstacle_on_lane:
+                print("State: DECEL_AND_STOP -> STOP_FOR_OBSTACLES")
                 self._state = FSMState.STOP_FOR_OBSTACLES
 
             elif self._lightstate == TrafficLightState.GO or self._lightstate == TrafficLightState.NO_TL:
+                print("State: DECEL_AND_STOP -> FOLLOW_LANE")
                 self._state = FSMState.FOLLOW_LANE
 
         # in this state, check if agent has released our trajectory for passing in follow lane
         elif self._state == FSMState.STOP_FOR_OBSTACLES:
-            print("State: STOP_FOR_OBSTACLES")
+            #print("State: STOP_FOR_OBSTACLES")
             if not self._obstacle_on_lane:
+                print("State: STOP_FOR_OBSTACLES -> FOLLOW_LANE")
                 self._state = FSMState.FOLLOW_LANE
 
         else: raise ValueError('Invalid state value.')
