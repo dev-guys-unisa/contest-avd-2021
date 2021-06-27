@@ -7,7 +7,7 @@ This is the project repository for the Autonomous Vehicle Driving course @ Unisa
 ___
 # Group Members
 
-![Alt text](https://github.com/dev-guys-unisa/ContestCognitiveRobotics2020/blob/main/utils/Logo.png?raw=true "GroupMembers")
+**Group 16**
 
 * Salvatore Ventre
 * Vincenzo Russomanno
@@ -27,18 +27,6 @@ This software is made relying on the Python language and tested with the [Carla 
 ```bash
 /usr/bin/python3.6 -m pip install -r requirements.txt
 ```
-
-These are the requirements:
-|Index|Tool|Version|
-|-----|----|-------|
-|1|Python|== 3.6.2|
-|2|Pillow|>= 8.1.2|
-|3|Numpy|>= 1.14.5|
-|4|Protobuf|>= 3.6.0|
-|5|PyGame|>= 1.9.4|
-|6|MatPlotLib|== 3.0.0|
-|7|Future|>= 0.16.0|
-|8|SciPy|>= 0.17.0|
 ___
 # Clone the Repository
 First of all it is necessary to clone the repository in the PythonClient directory in Carla Simulator, by running these commands:
@@ -71,4 +59,4 @@ cd ../../CarlaSimulator/PythonClient/contest-avd-2021/src/
 python3.6 main.py --host *ipaddress* --port *port*
 ```
 ___
-##### Group 18
+##### Group 16
