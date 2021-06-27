@@ -559,8 +559,6 @@ def exec_waypoint_nav_demo(args):
         prev_x = False
         prev_y = False
 
-        #TODO: togliere o meno
-        #intersections_location = []
         # Put waypoints in the lane
         previuos_waypoint = mission_planner._map.convert_to_world(waypoints_route[0])
         for i in range(1,len(waypoints_route)):
@@ -587,10 +585,6 @@ def exec_waypoint_nav_demo(args):
 
                 start_intersection = make_correction(start_intersection, prev_start_intersection, TURN_SPEED)
                 end_intersection = make_correction(end_intersection, center_intersection, TURN_SPEED)
-                
-                #TODO: TOGLIERE O MENO
-                # Save all the intersection in order to be able to stop at the traffic lights
-                #intersections_location.append(start_intersection)
 
                 dx = start_intersection[0] - end_intersection[0]
                 dy = start_intersection[1] - end_intersection[1]
@@ -800,10 +794,8 @@ def exec_waypoint_nav_demo(args):
         
         LEAD_Y_DIST = 3 # distance on y-axis (m) used in order to evaluate if a possible lead car is in our lane
         LEAD_MAX_YAW_DIFF = 30 # angle difference (deg) in order to evaluate if a possible lead car has a similar orientation to ours
-        #TODO: terzo e quarto argomento del costruttore servono?
-        bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE,
-                                                    LEAD_VEHICLE_LOOKAHEAD, 
-                                                    [])
+        
+        bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE, LEAD_VEHICLE_LOOKAHEAD)
 
         #############################################
         # SCENARIO EXECUTION LOOP
@@ -910,7 +902,6 @@ def exec_waypoint_nav_demo(args):
                     location = transform.location
                     rotation = transform.rotation
                     
-                    #TODO: controllare se con la norma nel global frame cambia qualcosa o meno
                     # Retrieve the position of the vehicle in the vehicle frame
                     car_loc_relative = transform_world_to_ego_frame([location.x, location.y, location.z],
                                                                     [current_x, current_y, current_z],
@@ -934,7 +925,6 @@ def exec_waypoint_nav_demo(args):
                                     car_loc_relative,
                                     [current_x, current_y, current_z],
                                     [current_roll, current_pitch, current_yaw]):
-                                #print("VEHICLE -> OBSTACLE ON LANE")
                                 bp._obstacle_on_lane = True
                             else:
                                 # ... or it has to be managed as an obstacle
@@ -958,10 +948,7 @@ def exec_waypoint_nav_demo(args):
                                     [current_x, current_y, current_z],
                                     [current_roll, current_pitch, current_yaw], 
                                     speed=10):
-                            #print("PEDESTRIAN -> OBSTACLE ON LANE")
                             bp._obstacle_on_lane = True
-                            # TODO: rimuovere?
-                            #bp.set_pedestrian_loc(loc_relative, norm)
                         else:
                             # ...or add it as an obstacle
                             obstacles.append(obstacle_to_world(location, pedestrian.bounding_box.extent, rotation))
@@ -982,20 +969,16 @@ def exec_waypoint_nav_demo(args):
                 #cv2.imshow("Depth Camera", depth_camera_data)
                 cv2.waitKey(1)
 
-                bp.set_depth_img({"CameraDEPTH_TL":depth_camera_data, "CameraDEPTH_FRONT":depth_camera_data_front})
+                # set attributes that will be used in estimating the position of the TL in case of STOP
+                bp.set_depth_imgs({"CameraDEPTH_TL":depth_camera_data, "CameraDEPTH_FRONT":depth_camera_data_front})
                 bp.set_current_box(detector._current_box)
-                bp.set_camera_params(depth_info)
+                bp.set_cameras_params(depth_info)
 
+                # decide new TL state
                 curr_light_state = detector.update_state(boxes1, boxes2)
                 if prev_tl_state != curr_light_state:
                     prev_tl_state = curr_light_state
                     print(f"Traffic Light: {curr_light_state.name}")
-
-                # if curr_center_boxes is not None:
-                #     tl_distance = depth_camera_data[curr_center_boxes[1]][curr_center_boxes[0]]*1000 #normalized distance from TL [0,1]
-                #     print("TL POS: ", curr_center_boxes, " - TL Distance: ", tl_distance)
-                #     # set traffic lights locations in the behavioural planner in order to be used in state computation
-                #     bp.set_tl_locations(tl_distance)
                 
                 # set state of the nearest traffic light in the behavioural planner in order to be used in state computation
                 bp.set_lightstate(curr_light_state)

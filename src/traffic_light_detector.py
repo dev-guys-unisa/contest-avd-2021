@@ -22,7 +22,7 @@ class TrafficLightDetector(YOLO):
     This class allows to use the Traffic-Light-Detection module in order
     to detect traffic lights in Carla.
     """
-    # Minimum thresholdS to refuse false positives
+    # Minimum thresholds to refuse false positives
     MIN_TH = 0.1
     MAX_TH1 = 0.20
     MAX_TH2 = 0.35
@@ -32,8 +32,6 @@ class TrafficLightDetector(YOLO):
     MIN_GO_FRAMES = 10      # Min frames to choice GO signal
     MIN_NOTL_FRAMES = 10    # Min frames to choice NO_TL signal
     MIN_INDECISION_FRAMES = 30  # Min frames to understand that the state predicted is not reliable 
-
-    #__slots__ = 'config', 'labels', '_state_counter', '_indecision_counter', '_state', '_new_state'
 
     def __init__(self):
         # recover detector configuration, changing the default path to h5 model
@@ -51,8 +49,8 @@ class TrafficLightDetector(YOLO):
         self._state = None      # last stable traffic light state
         self._new_state = None # current traffic light state
 
-        self._current_boxes = [] # [box1, box2]
-        self._current_box = None # {nomeCamera: box}
+        self._current_boxes = [] # best boxes detected in the current frame, one for image -> format: [box1, box2]
+        self._current_box = None # box associated to the current chosen detection -> format: {camera_name: box}
 
     def get_state(self):
         return self._state
@@ -122,7 +120,7 @@ class TrafficLightDetector(YOLO):
         # Heuristic: get the boxes with greater area, aka the prediction of the nearest traffic ligth
         box = sorted(boxes_, key=lambda b: b.get_area(), reverse=True)[0]
 
-        self._current_boxes.append(box)
+        self._current_boxes.append(box) # save current best detection on one of the two RGB captured images
 
         # return GO or STOP state with relative accuracy
         if box.get_label() == TrafficLightState.GO.value: return TrafficLightState.GO, box.get_score()
@@ -184,11 +182,9 @@ class TrafficLightDetector(YOLO):
         elif ((self._new_state == TrafficLightState.NO_TL and self._state_counter >= self.MIN_NOTL_FRAMES) or
               (self._new_state == TrafficLightState.GO and self._state_counter >= self.MIN_GO_FRAMES) or
               (self._new_state == TrafficLightState.STOP and self._state_counter >= self.MIN_STOP_FRAMES)):
-            print("Stato ", self._new_state, " stabile")
             self._state = self._new_state
             self._state_counter = 0
             self._indecision_counter = 0
-
             self._current_box = current_box
 
         return self.get_state()

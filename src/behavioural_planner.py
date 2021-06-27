@@ -9,23 +9,23 @@ from enum import Enum
 # DECLARATION OF FSM STATES
 ###############################################################################
 class FSMState(Enum):
-    FOLLOW_LANE = 0
-    DECELERATE_AND_STOP = 1
-    STOP_FOR_OBSTACLES = 2
+    FOLLOW_LANE             = 0
+    DECELERATE_AND_STOP     = 1
+    STOP_FOR_OBSTACLES      = 2
 
 ###############################################################################
 # DECLARATION OF USEFUL CONSTANTS
 ###############################################################################
-DIST_TO_TL = 15 # distance (m) for evaluating nearest traffic light to stop at 
-DIST_STOP_TL = 3.5 # minimum distance (m) from the traffic light to which we want to stop for a RED light
-TL_Y_POS = 3.5 # distance (m) on the Y axis for the traffic light check.
-DIST_TO_PEDESTRIAN = 3 # distance (m) from the nearest pedestrian within we have to stop
+DIST_TO_TL          = 15 # distance (m) for evaluating nearest traffic light to stop at 
+DIST_STOP_TL        = 4 # minimum distance (m) from the traffic light to which we want to stop for a RED light
+TL_Y_POS            = 3.5 # distance (m) on the Y axis for the traffic light check.
+DIST_TO_PEDESTRIAN  = 3 # distance (m) from the nearest pedestrian within we have to stop
 
 ###############################################################################
 # DECLARATION OF MAIN CLASS FOR BP PLANNER
 ###############################################################################
 class BehaviouralPlanner:
-    def __init__(self, lookahead, lead_vehicle_lookahead, intersection):
+    def __init__(self, lookahead, lead_vehicle_lookahead):
         self._lookahead                     = lookahead # distance (m) for looking at next waypoint
         self._follow_lead_vehicle_lookahead = lead_vehicle_lookahead # distance (m) for looking at a lead vehicle
         self._state                         = FSMState.FOLLOW_LANE # current state of the FSM which implements the bp
@@ -35,13 +35,12 @@ class BehaviouralPlanner:
         self._goal_index                    = 0 # index of the next waypoint to reach
         self._lightstate                    = TrafficLightState.NO_TL # current state of the nearest traffic light
 
-        self._tl_locations                  = intersection # TODO: inizializzare direttamente a lista vuota
         self._emergency_distance            = 0 #TODO: serve?
 
-        self._depth_image                   = None # images of depth cameras {nomeCamera:image}
-        self._current_box                   = None # current detected traffic light box
-        self._camera_params                 = {} # parameters of depth camera used in camera projection geometry {name:params}
-        self._inv_intrinsic_matrix          = {"CameraDEPTH_TL":None, "CameraDEPTH_FRONT":None} # inverse of intrinsic matrix used in camera projection geometry
+        self._depth_images                  = None # images of depth cameras -> format: {camera_name:image}
+        self._current_box                   = None # current detected traffic light box -> format: {camera_name:box}
+        self._cameras_params                = {} # parameters of depth camera used in camera projection geometry -> format: {name:params}
+        self._inv_intrinsic_matrices        = {"CameraDEPTH_TL":None, "CameraDEPTH_FRONT":None} # inverse of intrinsic matrices used in camera projection geometry
 
         # Rotation matrix to align image frame to camera frame
         rotation_image_camera_frame = np.dot(rotate_z(-90 * math.pi /180),rotate_x(-90 * math.pi /180))
@@ -59,33 +58,30 @@ class BehaviouralPlanner:
     def set_lightstate(self, lighstate):
         self._lightstate = lighstate
 
-    def set_depth_img(self, depth_img):
-        self._depth_image = depth_img
+    def set_depth_imgs(self, depth_imgs):
+        self._depth_images = depth_imgs
     
     def set_current_box(self, box):
-        self._current_box = box
+        if box!=[]: self._current_box = box
     
-    def set_camera_params(self, depth_info):
-        self._camera_params = depth_info
+    def set_cameras_params(self, depth_info):
+        self._cameras_params = depth_info
 
         for k in list(depth_info.keys()):
             # Calculate Inverse Intrinsic Matrix for both depth cameras
-            f = self._camera_params[k]["w"] /(2 * math.tan(self._camera_params[k]["fov"] * math.pi / 360))
-            Center_X = self._camera_params[k]["w"] / 2.0
-            Center_Y = self._camera_params[k]["h"] / 2.0
+            f = self._cameras_params[k]["w"] /(2 * math.tan(self._cameras_params[k]["fov"] * math.pi / 360))
+            Center_X = self._cameras_params[k]["w"] / 2.0
+            Center_Y = self._cameras_params[k]["h"] / 2.0
 
             intrinsic_matrix = np.array([[f, 0, Center_X],
                                         [0, f, Center_Y],
                                         [0, 0, 1]])
 
-            self._inv_intrinsic_matrix[k]=np.linalg.inv(intrinsic_matrix)
+            self._inv_intrinsic_matrices[k]=np.linalg.inv(intrinsic_matrix)
 
     #TODO: serve?
     def set_emergency_distance(self, emergency_distance):
         self._emergency_distance = emergency_distance
-    
-    def set_tl_locations(self, tl_locations):
-        self._tl_locations = tl_locations
 
     def get_tl_stop_goal(self, waypoints, ego_state, closest_index, goal_index):
         """
@@ -134,19 +130,26 @@ class BehaviouralPlanner:
                                 return j
                     # Otherwise we stop checking.
                     else:
-                        print(f"TL behind, ignored. Position: {tl_pos}")
                         return None
         return None
 
     def get_tl_pos(self):
+        """This function estimates the position of the nearest traffic light, 
+           combining informations from detector e depth cameras.
+
+        Returns:
+            position in the vehicle frame or None if no boxes are detected
+        """
         if self._current_box is None: return None # NO_TL
 
-        cam_name = list(self._current_box.keys())[0]
-        box = list(self._current_box.values())[0]
-        depth_image = self._depth_image[cam_name]
-        inv_intrinsic_matrix = self._inv_intrinsic_matrix[cam_name]
-        camera_params = self._camera_params[cam_name]
+        cam_name = list(self._current_box.keys())[0] # name of the camera on which box is detected
+        box = list(self._current_box.values())[0] # detected box
+        # recover corresponding depth image infos
+        depth_image = self._depth_images[cam_name] 
+        inv_intrinsic_matrix = self._inv_intrinsic_matrices[cam_name]
+        camera_params = self._cameras_params[cam_name]
         
+        # recover box parameters
         xmin, ymin, xmax, ymax = box.get_bounds()
         xmin = xmin*400
         xmax = xmax*400
@@ -162,8 +165,6 @@ class BehaviouralPlanner:
                         y = j
                         x = i
                         depth = depth_image[y][x]
-        
-        #print("DEPTH: ", depth*1000)
 
         pixel = [x, y, 1]
         pixel = np.reshape(pixel, (3,1))
@@ -179,7 +180,7 @@ class BehaviouralPlanner:
             image_frame_vect_extended[:3] = image_frame_vect 
             image_frame_vect_extended[-1] = 1
 
-            # Projection Camera to Vehicle Frame
+            # Projection Image to Camera Frame
             camera_frame = self._image_to_camera_frame(image_frame_vect_extended)
             camera_frame = camera_frame[:3]
             camera_frame = np.asarray(np.reshape(camera_frame, (1,3)))
@@ -187,7 +188,8 @@ class BehaviouralPlanner:
             camera_frame_extended = np.zeros((4,1))
             camera_frame_extended[:3] = camera_frame.T 
             camera_frame_extended[-1] = 1
-
+            
+            # Projection Camera to Vehicle Frame
             camera_to_vehicle_frame = np.zeros((4,4))
             camera_to_vehicle_frame[:3,:3] = to_rot([camera_params["pitch"], camera_params["yaw"], camera_params["roll"]])
             camera_to_vehicle_frame[:,-1] = [camera_params["x"], camera_params["y"], camera_params["h"], 1]
