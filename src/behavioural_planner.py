@@ -35,8 +35,6 @@ class BehaviouralPlanner:
         self._goal_index                    = 0 # index of the next waypoint to reach
         self._lightstate                    = TrafficLightState.NO_TL # current state of the nearest traffic light
 
-        self._emergency_distance            = 0 #TODO: serve?
-
         self._depth_images                  = None # images of depth cameras -> format: {camera_name:image}
         self._current_box                   = None # current detected traffic light box -> format: {camera_name:box}
         self._cameras_params                = {} # parameters of depth camera used in camera projection geometry -> format: {name:params}
@@ -78,10 +76,6 @@ class BehaviouralPlanner:
                                         [0, 0, 1]])
 
             self._inv_intrinsic_matrices[k]=np.linalg.inv(intrinsic_matrix)
-
-    #TODO: serve?
-    def set_emergency_distance(self, emergency_distance):
-        self._emergency_distance = emergency_distance
 
     def get_tl_stop_goal(self, waypoints, ego_state, closest_index, goal_index):
         """

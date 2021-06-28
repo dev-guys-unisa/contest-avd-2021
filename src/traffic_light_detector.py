@@ -23,7 +23,6 @@ class TrafficLightDetector(YOLO):
     to detect traffic lights in Carla.
     """
     # Minimum thresholds to refuse false positives
-    MIN_TH = 0.1
     MAX_TH1 = 0.20
     MAX_TH2 = 0.35
 
@@ -109,17 +108,14 @@ class TrafficLightDetector(YOLO):
             [tlstate, score]: the predicted label with the relative score
         """
 
-        # get all boxes with score greater than MIN_TH
-        boxes_ = list(filter(lambda b: b.get_score() > TrafficLightDetector.MIN_TH, boxes))
-
         # if no boxes are found, we haven't a traffic light
-        if len(boxes_) == 0: 
+        if len(boxes) == 0: 
             self._current_boxes.append([])
             return TrafficLightState.NO_TL, 0
 
-        # Heuristic: get the boxes with greater area, aka the prediction of the nearest traffic ligth
-        box = sorted(boxes_, key=lambda b: b.get_area(), reverse=True)[0]
+        # else process the box found
 
+        box = boxes[0]
         self._current_boxes.append(box) # save current best detection on one of the two RGB captured images
 
         # return GO or STOP state with relative accuracy

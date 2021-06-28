@@ -824,16 +824,12 @@ def exec_waypoint_nav_demo(args):
             measurement_data, sensor_data = client.read_data()
 
             obstacles = [] # lists containing the bounding boxes of the obstacles (pedestrian/vehicles) found on the lane
-            tl_locations = [] # lists containing the locations of the traffic lights in the scene
 
             # Update pose and timestamp
             prev_timestamp = current_timestamp
             current_x, current_y, current_z, current_pitch, current_roll, current_yaw = get_current_pose(measurement_data)
             current_speed = measurement_data.player_measurements.forward_speed
             current_timestamp = float(measurement_data.game_timestamp) / 1000.0
-            
-            #TODO: SERVE?
-            #bp.set_emergency_distance(calc_distance(current_speed, 0, -A_MAX))
 
             # Wait for some initial time before starting the demo
             if current_timestamp <= WAIT_TIME_BEFORE_START:
@@ -916,7 +912,7 @@ def exec_waypoint_nav_demo(args):
                         LEAD_X_DIST = car_loc_relative[0]
                         lead_car_pos = [agent.vehicle.transform.location.x, agent.vehicle.transform.location.y]
                         lead_car_speed = agent.vehicle.forward_speed
-                    # else check if car is close (distance from us < 7 m) ...
+                    # else check if car is close (distance from us < 10 m) ...
                     else:
                         if np.linalg.norm(car_loc_relative) < LOOKAHEAD_VEHICLE:
                             # ... for stopping if it intersects our trajectory ...
@@ -939,7 +935,7 @@ def exec_waypoint_nav_demo(args):
                     loc_relative = transform_world_to_ego_frame([location.x, location.y, location.z],
                                                                 [current_x, current_y, current_z],
                                                                 [current_roll, current_pitch, current_yaw])
-                    # if distance from us is less than 7 m ...
+                    # if distance from us is less than 10 m ...
                     if np.linalg.norm(loc_relative) < LOOKAHEAD_PEDESTRIAN:
                         # ... check if it intersects our trajectory for stopping
                         if check_obstacle_future_intersection(pedestrian,
@@ -952,11 +948,6 @@ def exec_waypoint_nav_demo(args):
                         else:
                             # ...or add it as an obstacle
                             obstacles.append(obstacle_to_world(location, pedestrian.bounding_box.extent, rotation))
-                
-                # if the agent is a traffic light, get its location for deciding where to stop if nearest TL is red
-                elif agent.HasField('traffic_light'):
-                    location = agent.traffic_light.transform.location
-                    tl_locations.append([location.x,location.y,location.z])
         
             ## USE PLANNING MODULES EACH LP_FREQUENCY_DIVISOR FRAMES ##
             if frame % LP_FREQUENCY_DIVISOR == 0:
@@ -966,7 +957,6 @@ def exec_waypoint_nav_demo(args):
                 boxes1 = detector.predict_image(front_camera_data)
                 front_camera_data = detector.draw_boxes(front_camera_data, boxes1)
                 cv2.imshow("Cameras", np.hstack((front_camera_data, tl_camera_data)))
-                #cv2.imshow("Depth Camera", depth_camera_data)
                 cv2.waitKey(1)
 
                 # set attributes that will be used in estimating the position of the TL in case of STOP
@@ -999,8 +989,6 @@ def exec_waypoint_nav_demo(args):
                 # check for a lead vehicle
                 if lead_car_pos is not None:
                     bp.check_for_lead_vehicle(ego_state, lead_car_pos)
-                    # if bp._follow_lead_vehicle:
-                    #     print(f"Lead vehicle to follow => pos: {lead_car_pos}, vel: {lead_car_speed}")
 
                 # Compute the goal state set from the behavioural planner's computed goal state.
                 goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
